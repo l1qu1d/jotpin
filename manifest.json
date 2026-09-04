@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.jotpin",
+  "name": "JotPin",
+  "version": "0.1.0",
+  "author": "JotPin contributors",
+  "description": "A quick Markdown scratchpad for the Omarchy shell.",
+  "kinds": ["panel"],
+  "activation": "on-demand",
+  "keepLoaded": false,
+  "entryPoints": {
+    "panel": "JotPin.qml"
+  }
+}

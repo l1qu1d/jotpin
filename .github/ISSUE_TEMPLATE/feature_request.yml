@@ -1,0 +1,69 @@
+name: Feature request
+description: Suggest an improvement to JotPin
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues before opening a new request. Describe
+        the user problem first so the proposed solution can be evaluated.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: What would you like JotPin to do?
+      placeholder: Add ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project would this affect?
+      options:
+        - Editor behavior
+        - Markdown rendering
+        - Notes, tabs, or persistence
+        - Preview or Raw presentation
+        - Omarchy or desktop integration
+        - Testing or maintenance
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What limitation or user need does this address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you would like, including an example when useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches, workarounds, or existing tools did you consider?
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups, links, screenshots, or other context. Remove private note content and secrets.
+    validations:
+      required: false
+

@@ -1,0 +1,33 @@
+{
+  "NativeLinkContract": [
+    "test_link_contract(inline)",
+    "test_link_contract(repeated-label)",
+    "test_link_contract(bold-label)",
+    "test_link_contract(reference)",
+    "test_link_contract(autolink)",
+    "test_link_contract(wrapped)",
+    "test_link_contract(padded)",
+    "test_link_contract(asymmetric-padding)",
+    "test_link_contract(zero-padding)",
+    "test_link_contract(word-wrap)",
+    "test_link_contract(proportional-font)",
+    "test_link_contract(collapsed-reference)",
+    "test_link_contract(shortcut-reference)",
+    "test_marker_pixels()",
+    "test_modifier_and_drag_boundaries()",
+    "test_unresolved_reference_is_plain_text()"
+  ],
+  "NativeMarkdownMouseBelowFence": [
+    "test_clicks_in_scratchpad_shaped_fence()",
+    "test_clicks_rendered_task_checkbox()",
+    "test_ctrl_click_activates_link_only_with_modifier()",
+    "test_ctrl_link_cursor_stays_visible()",
+    "test_ctrl_link_blank_space_is_inert()",
+    "test_ctrl_drag_does_not_activate_link()",
+    "test_drag_selects_code_language()",
+    "test_drag_selects_code_language_after_styled_edit()",
+    "test_clicks_empty_code_language_slot()",
+    "test_selection_drag_does_not_scroll()",
+    "test_image_shows_four_corner_resize_frame()"
+  ]
+}

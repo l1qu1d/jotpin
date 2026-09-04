@@ -1,0 +1,21 @@
+{
+  "name": "jotpin-vendor-build",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned build-only dependencies for JotPin's offline language tools.",
+  "dependencies": {
+    "@exercism/highlightjs-gdscript": "0.0.1",
+    "browserify": "17.0.1",
+    "dictionary-en": "4.0.0",
+    "esbuild": "0.28.2",
+    "highlight.js": "11.12.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-gfm": "3.1.0",
+    "mdast-util-to-hast": "13.2.1",
+    "hast-util-sanitize": "5.0.2",
+    "hast-util-to-html": "9.0.5",
+    "micromark": "4.0.2",
+    "micromark-extension-gfm": "3.0.0",
+    "nspell": "2.1.5"
+  }
+}

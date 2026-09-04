@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  model:
+    name: Model tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: |
+          bash tests/run.sh model
+          node tests/spellcheck_model.test.cjs
+          node tests/qt_contract_gate.test.cjs
+          node tests/native_report_gate.test.cjs
+
+  headless:
+    name: Full headless suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container: archlinux:base
+    env:
+      OMARCHY_PATH: /usr/share/omarchy
+      OMARCHY_CI_COMMIT: 493067741e081c3b09082da6bfd51e99ec24ef00
+    steps:
+      - name: Install isolated test dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git nodejs jq ripgrep lua perl md4c quickshell qt6-tools ttf-dejavu ttf-jetbrains-mono-nerd noto-fonts fontconfig procps-ng which
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Load pinned Omarchy modules (no desktop installation)
+        shell: bash
+        run: |
+          git init "$OMARCHY_PATH"
+          git -C "$OMARCHY_PATH" remote add origin https://github.com/omacom/omarchy.git
+          git -C "$OMARCHY_PATH" fetch --depth=1 origin "$OMARCHY_CI_COMMIT"
+          git -C "$OMARCHY_PATH" checkout --detach FETCH_HEAD
+          echo "$OMARCHY_PATH/bin" >> "$GITHUB_PATH"
+      - name: Run complete production headless suite
+        shell: bash
+        run: bash tests/run.sh headless

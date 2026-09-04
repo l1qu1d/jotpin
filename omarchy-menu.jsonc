@@ -1,0 +1,5 @@
+{
+  // JotPin's desktop entry supplies Apps with the real application icon.
+  "personal": {"icon":"","label":"Personal"},
+  "personal.jotpin": {"icon":"󰎞","label":"JotPin","description":"Quick Markdown scratchpad","action":"omarchy-shell shell summon dev.jotpin"}
+}

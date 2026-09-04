@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=JotPin
+GenericName=Markdown Scratchpad
+Comment=Quick Markdown notes from the Omarchy shell
+Exec=omarchy-shell shell summon dev.jotpin
+Icon=dev.jotpin
+Terminal=false
+Categories=Utility;TextEditor;
+Keywords=Markdown;Notes;Scratchpad;
+StartupNotify=false

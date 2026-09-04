@@ -1,0 +1,15 @@
+{
+  "generatedBy": "scripts/build_vendor_bundles.mjs",
+  "markdownGeneratedBy": "scripts/build_markdown_bundle.mjs",
+  "highlightJs": "11.12.0",
+  "highlightJsGdscript": "0.0.1",
+  "micromark": "4.0.2",
+  "micromarkExtensionGfm": "3.0.0",
+  "mdastUtilFromMarkdown": "2.0.3",
+  "mdastUtilGfm": "3.1.0",
+  "mdastUtilToHast": "13.2.1",
+  "hastUtilSanitize": "5.0.2",
+  "hastUtilToHtml": "9.0.5",
+  "nspell": "2.1.5",
+  "dictionaryEn": "4.0.0"
+}

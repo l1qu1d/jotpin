@@ -1,0 +1,16 @@
+# Local agent workspace metadata
+.agents/
+.codex/
+
+# Editor and operating-system files
+*.swp
+*~
+.DS_Store
+
+# Optional local test captures
+artifacts/
+captures/
+test-artifacts/
+
+# Reproducible build-only JavaScript dependencies
+scripts/vendor/node_modules/
