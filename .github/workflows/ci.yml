@@ -42,7 +42,7 @@ jobs:
     steps:
       - name: Install isolated test dependencies
         run: |
-          pacman -Syu --noconfirm --needed git nodejs jq ripgrep lua perl md4c quickshell qt6-tools ttf-dejavu ttf-jetbrains-mono-nerd noto-fonts fontconfig procps-ng which
+          pacman -Syu --noconfirm --needed git nodejs jq ripgrep lua perl md4c quickshell qt6-tools ttf-dejavu ttf-jetbrains-mono-nerd noto-fonts fontconfig procps-ng which diffutils
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
