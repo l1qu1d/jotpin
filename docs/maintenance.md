@@ -77,6 +77,11 @@ Check current plan eligibility and repository access before activation. The
 file itself does not subscribe to a plan or install the app. Review suggestions
 before applying them.
 
+For public repositories with fewer than 10 stars, trigger a review from the
+CodeRabbit status comment or comment `@coderabbitai full review` on the pull
+request. See [CodeRabbit plans](https://docs.coderabbit.ai/management/plans)
+for current open-source eligibility and limits.
+
 ## Issues and releases
 
 Use the bug and feature forms, and label issues with `bug`, `enhancement`,
