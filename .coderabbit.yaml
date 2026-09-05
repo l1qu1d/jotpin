@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - '!markdown/MarkdownParserWorker.js'
+    - '!spellcheck/SpellcheckWorker.js'
+    - '!syntax/HighlightWorker.js'
+    - '!vendor/**'
+    - '!HtmlEntities.js'
+    - '!scripts/vendor/package-lock.json'
+  path_instructions:
+    - path: '**/*'
+      instructions: >-
+        Read AGENTS.md and relevant docs/editor-contracts.md sections.
+        Prioritize correctness, exact Markdown preservation, atomic saving,
+        recovery, one shared editor, and QML lifecycle problems. Selection and
+        cursor movement must not dirty notes. Never recommend live desktop
+        tests for behavior covered by offscreen tests. Review generated bundle
+        changes through their source scripts and pinned dependencies.
+    - path: 'scripts/vendor/**'
+      instructions: >-
+        Dependency updates need regenerated committed workers, accurate
+        vendor/VERSIONS.json and third-party notices, and the full headless
+        suite. A lockfile-only update does not update the shipped runtime.

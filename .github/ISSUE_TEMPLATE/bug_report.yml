@@ -1,0 +1,89 @@
+name: Bug report
+description: Report a reproducible problem in JotPin
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. Remove private note contents,
+        credentials, and sensitive paths from everything you paste here.
+        For a security vulnerability, use the private route in SECURITY.md.
+
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Include the JotPin release or commit, Omarchy version, and Quickshell version.
+      placeholder: |
+        JotPin:
+        Omarchy:
+        Quickshell:
+    validations:
+      required: true
+
+  - type: dropdown
+    id: presentation
+    attributes:
+      label: Presentation
+      description: Where did the problem occur?
+      options:
+        - Preview / Side
+        - Preview / Window
+        - Raw / Side
+        - Raw / Window
+        - Both presentations
+        - Not presentation-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest sequence that shows the problem.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Press or click ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include an error message if there was one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: markdown
+    attributes:
+      label: Minimal redacted Markdown
+      description: Paste the smallest Markdown example that reproduces the issue. Use N/A when the issue does not involve note content.
+      placeholder: |
+        # Small example
+
+        ```text
+        Remove private or sensitive content before submitting.
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or additional context
+      description: Paste relevant sanitized logs, screenshots, recordings, or other context. Do not include secrets.
+    validations:
+      required: false

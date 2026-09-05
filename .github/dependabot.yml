@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /scripts/vendor
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      vendor-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
