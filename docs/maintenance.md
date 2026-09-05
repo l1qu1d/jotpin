@@ -12,7 +12,8 @@ no persisted checkout credentials. It never runs the desktop-interactive suite.
 
 - **Model tests** run portable JavaScript tests on Ubuntu with Node 24.
 - **Full headless suite** runs the existing production runner in an isolated
-  Arch container. Omarchy's source revision is pinned in the workflow; its
+  Arch container as an unprivileged user so file-permission regressions are
+  exercised correctly. Omarchy's source revision is pinned in the workflow; its
   install scripts and desktop shell are never started. Arch packages follow
   the current repository, so this also detects dependency compatibility drift.
 

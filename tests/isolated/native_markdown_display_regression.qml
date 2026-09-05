@@ -969,7 +969,9 @@ ShellRoot {
           })) {
         settleTimer.stop()
         shell.checkInitialLayout()
-      } else if (shell.settleAttempts >= 250) {
+      // Worker startup on a cold CI host is not a performance measurement.
+      // Bound readiness by elapsed time rather than 250 one-ms timer ticks.
+      } else if (Date.now() - shell.startedAt >= 5000) {
         settleTimer.stop()
         shell.fail("layout did not settle: " + JSON.stringify({
           layoutReady: display.layoutReady,
@@ -978,7 +980,7 @@ ShellRoot {
           layoutCursorPosition: display.layoutCursorPosition,
           cursorPosition: shell.cursorPosition
         }))
-        shell.checkInitialLayout()
+        Qt.exit(1)
       }
     }
   }
