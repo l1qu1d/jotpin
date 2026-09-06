@@ -532,7 +532,7 @@ ShellRoot {
                responseIndex++) {
             var responseCandidate = pad.data[responseIndex]
             if (String(responseCandidate.source || "").indexOf(
-                "spellcheck/SpellcheckWorker.js") >= 0) {
+                "spellcheck/SpellcheckWorker.mjs") >= 0) {
               responseWorker = responseCandidate
               break
             }

@@ -636,3 +636,12 @@ The focused editor-command stage is available with
 `bash tests/isolated_persistence_regression.sh editor-commands`. Failed stage
 processes report their exit code and complete process log so a timeout or process
 failure can be distinguished from a failed assertion.
+
+## Spellcheck dictionary packaging
+
+The spellcheck worker uses standard ECMAScript modules. Two readable dictionary
+modules preserve the complete pinned dictionary-en data without embedding it
+in one oversized worker. `bash tests/isolated_vendor_regression.sh` checks the
+reconstructed dictionary against its original SHA-256 and exercises words from
+both sides of the split in a real offscreen Qt worker. Installer and editor
+harnesses copy all three spellcheck modules. No network is used at runtime.

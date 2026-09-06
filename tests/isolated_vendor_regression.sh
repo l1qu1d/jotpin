@@ -18,13 +18,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+node "$ROOT_DIR/tests/dictionary_bundle.mjs"
+
 for command in quickshell timeout rg mktemp cp mkdir; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is missing"
 done
 
 mkdir -m 700 -p -- "$CONFIG_DIR/spellcheck" "$CONFIG_DIR/syntax" "$RUNTIME_DIR"
 cp -- "$ROOT_DIR/tests/isolated/vendor_smoke.qml" "$CONFIG_DIR/shell.qml"
-cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.js" "$CONFIG_DIR/spellcheck/"
+cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" "$ROOT_DIR/spellcheck/DictionaryPart1.mjs" "$ROOT_DIR/spellcheck/DictionaryPart2.mjs" "$CONFIG_DIR/spellcheck/"
 cp -- "$ROOT_DIR/syntax/HighlightWorker.js" "$CONFIG_DIR/syntax/"
 
 if ! env -u QT_QPA_PLATFORMTHEME -u WAYLAND_DISPLAY -u DISPLAY \

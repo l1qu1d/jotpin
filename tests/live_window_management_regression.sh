@@ -84,7 +84,7 @@ mkdir -m 700 -p -- "$CONFIG_DIR/jotpin/markdown" \
   "$CONFIG_DIR/jotpin/spellcheck" "$CONFIG_DIR/jotpin/syntax"
 cp -- "$ROOT_DIR/markdown/MarkdownParserWorker.js" \
   "$CONFIG_DIR/jotpin/markdown/"
-cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.js" "$CONFIG_DIR/jotpin/spellcheck/"
+cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" "$ROOT_DIR/spellcheck/DictionaryPart1.mjs" "$ROOT_DIR/spellcheck/DictionaryPart2.mjs" "$CONFIG_DIR/jotpin/spellcheck/"
 cp -- "$ROOT_DIR/syntax/HighlightWorker.js" "$CONFIG_DIR/jotpin/syntax/"
 cp -- "$ROOT_DIR/tests/qml/live_window_management.qml" "$CONFIG_DIR/shell.qml"
 cp -- "$ROOT_DIR/tests/qml/special_workspace_fixture.qml" \

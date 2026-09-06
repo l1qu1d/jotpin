@@ -1095,13 +1095,13 @@ assert_contains "$ROOT_DIR/scripts/SpellcheckWorkerRuntime.js" \
 assert_contains "$ROOT_DIR/scripts/SpellcheckWorkerRuntime.js" \
   'var jotpinBundledWords = [' \
   'the spellcheck runtime declares bundled project vocabulary'
-assert_contains "$ROOT_DIR/spellcheck/SpellcheckWorker.js" \
+assert_contains "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" \
   "'Omarchy', 'omarchy'" \
   'the installed spellcheck worker accepts Omarchy'
-assert_contains "$ROOT_DIR/spellcheck/SpellcheckWorker.js" \
+assert_contains "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" \
   "'JotPin', 'jotpin'" \
   'the installed spellcheck worker accepts JotPin'
-assert_contains "$ROOT_DIR/spellcheck/SpellcheckWorker.js" \
+assert_contains "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" \
   'var jotpinCorrectCacheLimit = 4096' \
   'the spelling correctness cache has a fixed memory bound'
 assert_contains "$ROOT_DIR/JotPin.qml" \

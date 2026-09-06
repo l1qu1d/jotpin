@@ -175,7 +175,8 @@ for file in manifest.json EditorModel.js HtmlEntities.js SpellcheckModel.js \
     SyntaxHighlight.js JotPin.qml JotPinButton.qml HostIntegration.qml \
     NativeMarkdownDisplay.qml README.md PORTING.md LICENSE \
     THIRD_PARTY_NOTICES.md welcome.md assets/jotpin-icon.png \
-    markdown/MarkdownParserWorker.js spellcheck/SpellcheckWorker.js \
+    markdown/MarkdownParserWorker.js spellcheck/SpellcheckWorker.mjs \
+    spellcheck/DictionaryPart1.mjs spellcheck/DictionaryPart2.mjs \
     syntax/HighlightWorker.js \
     vendor/VERSIONS.json vendor/licenses/nspell-MIT.txt \
     vendor/licenses/is-buffer-MIT.txt \
@@ -277,7 +278,9 @@ cp -- \
   "$INSTALL_DIR/"
 cp -- "$ROOT_DIR/assets/jotpin-icon.png" "$INSTALL_DIR/assets/"
 cp -- "$ROOT_DIR/markdown/MarkdownParserWorker.js" "$INSTALL_DIR/markdown/"
-cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.js" "$INSTALL_DIR/spellcheck/"
+cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" "$ROOT_DIR/spellcheck/DictionaryPart1.mjs" "$ROOT_DIR/spellcheck/DictionaryPart2.mjs" "$INSTALL_DIR/spellcheck/"
+# Retire the former monolithic worker after the backed-up upgrade.
+rm -f -- "$INSTALL_DIR/spellcheck/SpellcheckWorker.js"
 cp -- "$ROOT_DIR/syntax/HighlightWorker.js" "$INSTALL_DIR/syntax/"
 cp -- "$ROOT_DIR/vendor/VERSIONS.json" "$INSTALL_DIR/vendor/"
 cp -- "$ROOT_DIR/vendor/licenses/"*.txt "$INSTALL_DIR/vendor/licenses/"

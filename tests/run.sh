@@ -38,6 +38,7 @@ run_headless() (
     XDG_DATA_HOME="$suite_tmp_dir/data" XDG_RUNTIME_DIR="$suite_tmp_dir/runtime"
   node "$ROOT_DIR/tests/qt_contract_gate.test.cjs"
   node "$ROOT_DIR/tests/native_report_gate.test.cjs"
+  node "$ROOT_DIR/tests/marketplace_packaging_regression.cjs"
   bash "$ROOT_DIR/tests/test_plugin.sh"
   node "$ROOT_DIR/tests/editor_performance.test.cjs"
   bash "$ROOT_DIR/tests/isolated_installer_regression.sh"

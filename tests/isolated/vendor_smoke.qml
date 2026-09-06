@@ -13,7 +13,7 @@ ShellRoot {
   property int initialMisspellingCount: 0
 
   function spellingPerformanceSource() {
-    var line = "server mispelled Omarchy JotPin Quickshell Hyprland " +
+    var line = "garbanzo garble zymurgy server mispelled Omarchy JotPin Quickshell Hyprland " +
       "Wayland CommonMark GFM QML JSON YAML GDScript autosaves " +
       "callouts strikethrough Todos `codewurd` " +
       "https://example.test/badwurd\n"
@@ -62,7 +62,7 @@ ShellRoot {
 
   WorkerScript {
     id: spellWorker
-    source: Qt.resolvedUrl("spellcheck/SpellcheckWorker.js")
+    source: Qt.resolvedUrl("spellcheck/SpellcheckWorker.mjs")
     onMessage: function(message) {
       if (message.type === "ready") {
         spellingSource = spellingPerformanceSource()

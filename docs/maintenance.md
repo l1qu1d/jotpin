@@ -17,6 +17,21 @@ no persisted checkout credentials. It never runs the desktop-interactive suite.
   install scripts and desktop shell are never started. Arch packages follow
   the current repository, so this also detects dependency compatibility drift.
 
+The headless runner also checks the local package against the current
+marketplace security scanner boundary. It includes root README and manifest
+entrypoints, supported source and executable files, and setup-named files while
+excluding the marketplace's documentation, test, fixture, and dependency
+directories. The limits are 512 KiB per scanned text file, 8 MiB across the
+scan (with the marketplace's 4 KiB probe allowance for large executable
+binaries), and 1000 scanned files. Run the focused check with:
+
+```bash
+node tests/marketplace_packaging_regression.cjs
+```
+
+Raster assets are outside the normal scanner scope unless their basename looks
+like an installer or setup artifact; generated JavaScript remains in scope.
+
 Once both jobs are green, require these checks in the `main` branch rules and
 block force pushes and deletion. A solo maintainer need not require another
 human's approval. Verify that the rules are enabled and enforced for the
