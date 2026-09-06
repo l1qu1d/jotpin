@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const assert = require("node:assert/strict")
-const {mkdtemp, lstat, mkdir, readFile, readdir, rm, writeFile} = require("node:fs/promises")
+const {mkdtemp, lstat, mkdir, open, readFile, readdir, rm, writeFile} = require("node:fs/promises")
 const {tmpdir} = require("node:os")
 const {basename, join, relative, resolve} = require("node:path")
 
@@ -101,9 +101,12 @@ async function scanEntries(tree) {
     const forcedEntryPoint = forced.has(entry.path)
     if (isExcludedPath(entry.path) && !forcedEntryPoint) return false
     const extensionless = !basename(entry.path).includes(".")
-    // Setup-named raster assets are probed by the marketplace and therefore
-    // remain in this local budget check. Ordinary raster assets are skipped.
+    // The marketplace has a separate bounded probe for setup-named assets.
+    // JotPin ships none. Fail closed here rather than claim a size-only pass
+    // proves that special probe succeeds (even a tiny installer.png can fail).
     const setupNamedBinary = isBinaryAssetPath(entry.path) && isSetupNamedPath(entry.path)
+    if (setupNamedBinary && entry.mode !== "100755" && !forcedEntryPoint)
+      throw new Error(`${entry.path} requires upstream setup-asset probing; unsupported by this local gate`)
     return isSecurityScanPath(entry.path)
       || entry.mode === "100755"
       || extensionless
@@ -138,7 +141,15 @@ async function validateLimits(entries) {
   }
   for (const entry of entries) {
     if (entry.size <= FILE_BYTE_LIMIT || entry.mode !== "100755") continue
-    const probe = (await readFile(entry.absolutePath)).subarray(0, EXECUTABLE_PROBE_BYTES)
+    const handle = await open(entry.absolutePath, "r")
+    let probe
+    try {
+      const buffer = Buffer.alloc(EXECUTABLE_PROBE_BYTES)
+      const {bytesRead} = await handle.read(buffer, 0, buffer.length, 0)
+      probe = buffer.subarray(0, bytesRead)
+    } finally {
+      await handle.close()
+    }
     if (!executableProbeLooksBinary(entry, probe)) {
       throw new Error(`${entry.path} exceeds ${FILE_BYTE_LIMIT} bytes and is not a supported executable binary`)
     }
@@ -171,6 +182,24 @@ async function assertOversizedFixtureDetected() {
     await writeFile(join(fixtureRoot, "tests", "ignored-worker.js"), Buffer.alloc(FILE_BYTE_LIMIT + 1, 0x78))
     const excluded = await scanEntries(await collectTree(fixtureRoot))
     assert.equal(excluded.some((entry) => entry.path === "tests/ignored-worker.js"), false)
+
+    await writeFile(join(fixtureRoot, "installer.png"),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    await assert.rejects(scanEntries(await collectTree(fixtureRoot)), /requires upstream setup-asset probing/)
+    await rm(join(fixtureRoot, "installer.png"))
+
+    // A sparse executable proves the probe does not allocate/read the full file.
+    const executablePath = join(fixtureRoot, "tool")
+    const executable = await open(executablePath, "w")
+    try {
+      await executable.write(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+      await executable.truncate(1024 * 1024 * 1024)
+    } finally {
+      await executable.close()
+    }
+    assert.deepEqual(await validateLimits([{path: "tool", absolutePath: executablePath,
+      mode: "100755", size: 1024 * 1024 * 1024}]),
+      {fileCount: 1, totalBytes: EXECUTABLE_PROBE_BYTES})
 
     await assert.rejects(() => validateLimits(Array.from({length: SNAPSHOT_FILE_LIMIT + 1}, (_, index) => ({
       mode: "100644", path: `file-${index}.js`, size: 0

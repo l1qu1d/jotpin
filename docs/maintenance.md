@@ -29,8 +29,10 @@ binaries), and 1000 scanned files. Run the focused check with:
 node tests/marketplace_packaging_regression.cjs
 ```
 
-Raster assets are outside the normal scanner scope unless their basename looks
-like an installer or setup artifact; generated JavaScript remains in scope.
+Generated JavaScript remains in scope. The local gate conservatively rejects
+setup-named raster assets, which require separate upstream probing; JotPin ships
+none. Ordinary preview images are outside the normal text scan. This packaging
+check does not replace the marketplace security baseline.
 
 Once both jobs are green, require these checks in the `main` branch rules and
 block force pushes and deletion. A solo maintainer need not require another
