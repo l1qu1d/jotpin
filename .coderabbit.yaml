@@ -10,6 +10,7 @@ reviews:
   path_filters:
     - '!markdown/MarkdownParserWorker.js'
     - '!spellcheck/SpellcheckWorker.mjs'
+    - '!spellcheck/DictionaryPart*.mjs'
     - '!syntax/HighlightWorker.js'
     - '!vendor/**'
     - '!HtmlEntities.js'
