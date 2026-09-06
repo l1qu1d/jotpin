@@ -7,9 +7,21 @@ that stays close at hand. Edit formatted notes directly, switch to source when
 you need it, and let autosave take care of the rest. Your notes stay in ordinary
 `.md` files, ready to use with your other tools.
 
+Built for Omarchy today, with other desktop environments in mind.
+
+## See it in action
+
+Take a two-minute tour of editing, checklists, code, tables, image resizing,
+search, tabs, settings, and recovery. Captioned, with no audio.
+
+https://github.com/user-attachments/assets/d3ba3142-e2c8-46e7-9582-c86a615016ac
+
+<details>
+<summary>View a screenshot</summary>
+
 ![JotPin preview](preview.png)
 
-Built for Omarchy today, with other desktop environments in mind.
+</details>
 
 ## Get started
 
@@ -35,6 +47,7 @@ from the Apps list.
 
 ## In this guide
 
+- [See it in action](#see-it-in-action)
 - [Features](#features)
 - [Using JotPin](#using-jotpin)
 - [Default keyboard shortcuts](#default-keyboard-shortcuts)
