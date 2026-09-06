@@ -16,6 +16,13 @@ search, tabs, settings, and recovery. Captioned, with no audio.
 
 https://github.com/user-attachments/assets/d3ba3142-e2c8-46e7-9582-c86a615016ac
 
+<details>
+<summary>View a screenshot</summary>
+
+![JotPin preview](preview.png)
+
+</details>
+
 ## Get started
 
 JotPin currently requires Omarchy with Quickshell shell-plugin support.
