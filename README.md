@@ -14,6 +14,8 @@ Built for Omarchy today, with other desktop environments in mind.
 Take a two-minute tour of editing, checklists, code, tables, image resizing,
 search, tabs, settings, and recovery. Captioned, with no audio.
 
+https://github.com/user-attachments/assets/d3ba3142-e2c8-46e7-9582-c86a615016ac
+
 ## Get started
 
 JotPin currently requires Omarchy with Quickshell shell-plugin support.
@@ -38,6 +40,7 @@ from the Apps list.
 
 ## In this guide
 
+- [See it in action](#see-it-in-action)
 - [Features](#features)
 - [Using JotPin](#using-jotpin)
 - [Default keyboard shortcuts](#default-keyboard-shortcuts)
