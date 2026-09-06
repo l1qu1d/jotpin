@@ -105,7 +105,7 @@ async function scanEntries(tree) {
     // JotPin ships none. Fail closed here rather than claim a size-only pass
     // proves that special probe succeeds (even a tiny installer.png can fail).
     const setupNamedBinary = isBinaryAssetPath(entry.path) && isSetupNamedPath(entry.path)
-    if (setupNamedBinary && entry.mode !== "100755" && !forcedEntryPoint)
+    if (setupNamedBinary)
       throw new Error(`${entry.path} requires upstream setup-asset probing; unsupported by this local gate`)
     return isSecurityScanPath(entry.path)
       || entry.mode === "100755"
@@ -186,6 +186,12 @@ async function assertOversizedFixtureDetected() {
     await writeFile(join(fixtureRoot, "installer.png"),
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
     await assert.rejects(scanEntries(await collectTree(fixtureRoot)), /requires upstream setup-asset probing/)
+    await assert.rejects(scanEntries([{path: "installer.png", mode: "100755",
+      size: 8, absolutePath: join(fixtureRoot, "installer.png")}]), /requires upstream setup-asset probing/)
+    await writeFile(join(fixtureRoot, "manifest.json"),
+      JSON.stringify({entryPoints: {panel: "installer.png"}}))
+    await assert.rejects(scanEntries(await collectTree(fixtureRoot)), /requires upstream setup-asset probing/)
+    await rm(join(fixtureRoot, "manifest.json"))
     await rm(join(fixtureRoot, "installer.png"))
 
     // A sparse executable proves the probe does not allocate/read the full file.
