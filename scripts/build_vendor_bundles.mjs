@@ -120,14 +120,32 @@ const nspellBundle = qmlStandalone(
 const spellcheckRuntime = readFileSync(resolve(scriptDirectory,
   'SpellcheckWorkerRuntime.js'), 'utf8')
 
-const worker = `var JOTPIN_NSPELL_BUNDLE = ${JSON.stringify(nspellBundle)}
+// Keep dictionary data readable and below the marketplace's 512 KiB file limit.
+// Join the original lines exactly, including the final newline and Hunspell flags.
+const dictionaryLines = dic.split('\n')
+const dictionaryMiddle = Math.ceil(dictionaryLines.length / 2)
+const dictionaryParts = [dictionaryLines.slice(0, dictionaryMiddle),
+  dictionaryLines.slice(dictionaryMiddle)]
+for (const [index, lines] of dictionaryParts.entries()) {
+  const data = '// Generated from dictionary-en; see vendor/licenses/dictionary-en-MIT-BSD.txt.\n' +
+    'export default [\n' + lines.map(line => JSON.stringify(line)).join(',\n') +
+    '\n].join("\\n")' + (index === 0 ? ' + "\\n"' : '') + '\n'
+  if (Buffer.byteLength(data) > 512 * 1024)
+    throw new Error('Generated dictionary part exceeds the marketplace file limit')
+  writeFileSync(resolve(spellDirectory, `DictionaryPart${index + 1}.mjs`), data)
+}
+
+const worker = `import dictionaryPart1 from './DictionaryPart1.mjs'
+import dictionaryPart2 from './DictionaryPart2.mjs'
+var JOTPIN_NSPELL_BUNDLE = ${JSON.stringify(nspellBundle)}
 var JOTPIN_AFF = ${JSON.stringify(aff)}
-var JOTPIN_DIC = ${JSON.stringify(dic)}
+var JOTPIN_DIC = dictionaryPart1 + dictionaryPart2
 ${spellcheckRuntime}`
 
-writeFileSync(resolve(spellDirectory, 'SpellcheckWorker.js'), worker)
+writeFileSync(resolve(spellDirectory, 'SpellcheckWorker.mjs'), worker)
 unlinkSync(temporaryNspell)
 writeFileSync(resolve(outputDirectory, 'VERSIONS.json'), JSON.stringify({
+  ...JSON.parse(readFileSync(resolve(outputDirectory, 'VERSIONS.json'), 'utf8')),
   generatedBy: 'scripts/build_vendor_bundles.mjs',
   highlightJs: '11.12.0',
   highlightJsGdscript: '0.0.1',

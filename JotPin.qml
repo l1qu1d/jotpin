@@ -5727,7 +5727,7 @@ Item {
 
   WorkerScript {
     id: spellcheckWorker
-    source: Qt.resolvedUrl("spellcheck/SpellcheckWorker.js")
+    source: Qt.resolvedUrl("spellcheck/SpellcheckWorker.mjs")
 
     onReadyChanged: root.flushSpellcheckInitialization()
 

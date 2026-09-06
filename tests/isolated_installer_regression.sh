@@ -111,7 +111,8 @@ for file in manifest.json EditorModel.js HtmlEntities.js SpellcheckModel.js \
   cmp -s "$ROOT_DIR/$file" "$FREE_INSTALL_DIR/$file" || \
     fail "installed plugin file differs: $file"
 done
-for file in markdown/MarkdownParserWorker.js spellcheck/SpellcheckWorker.js \
+for file in markdown/MarkdownParserWorker.js spellcheck/SpellcheckWorker.mjs \
+    spellcheck/DictionaryPart1.mjs spellcheck/DictionaryPart2.mjs \
     syntax/HighlightWorker.js \
     vendor/VERSIONS.json vendor/licenses/nspell-MIT.txt \
     vendor/licenses/is-buffer-MIT.txt \
@@ -159,7 +160,10 @@ run_installer "$DIRECTORY_HOME" free
 [[ -z "$(find "$DIRECTORY_HOME/Documents/Notes/welcome.md" -mindepth 1 -print -quit)" ]] || \
   fail 'the welcome-note installer wrote inside an existing directory'
 
+printf '%s\n' 'legacy worker fixture' > "$FREE_INSTALL_DIR/spellcheck/SpellcheckWorker.js"
 run_installer "$FREE_HOME" free 1
+[[ ! -e "$FREE_INSTALL_DIR/spellcheck/SpellcheckWorker.js" ]] || \
+  fail 'upgrade retained the obsolete monolithic spellcheck worker'
 cmp -s "$ROOT_DIR/hypr/jotpin.lua" "$FREE_HOME/.config/hypr/jotpin.lua" || \
   fail 'installed Hyprland rule differs from the checkout'
 cmp -s "$ROOT_DIR/hypr/jotpin_binding.lua" \
