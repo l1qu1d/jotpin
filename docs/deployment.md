@@ -1,9 +1,11 @@
 # JotPin deployment and failure recovery
 
-Read this procedure before deploying or stopping the shell. The coordinating
-agent owns these operations; workers return their changes and focused evidence.
-Deployment authorization remains in [AGENTS.md](../AGENTS.md); the live-test
-policy is in [verification.md](verification.md#desktop-interactive-test-policy).
+Read this procedure before deploying or stopping the shell. Coordinate a single
+stop/install/restart cycle after validation, and warn the desktop user before
+interrupting the shell. Preserve user notes, settings, and unrelated sessions.
+Documentation-only changes do not require deployment or a shell restart.
+The live-test policy is in
+[verification.md](verification.md#desktop-interactive-test-policy).
 Run commands from the repository root.
 
 ## Desktop integration options

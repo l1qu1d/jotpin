@@ -29,6 +29,11 @@ binaries), and 1000 scanned files. Run the focused check with:
 node tests/marketplace_packaging_regression.cjs
 ```
 
+The same check rejects tracked agent-control files, including `AGENTS.md`,
+even under documentation directories: standard plugin installation clones the
+whole repository. Keep contributor guidance in ordinary documentation and
+personal agent configuration outside the tracked repository.
+
 Generated JavaScript remains in scope. The local gate conservatively rejects
 setup-named raster assets, which require separate upstream probing; JotPin ships
 none. Ordinary preview images are outside the normal text scan. This packaging

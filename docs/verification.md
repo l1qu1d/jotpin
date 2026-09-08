@@ -2,7 +2,8 @@
 
 Read before selecting checks for executable plugin, installer, or test-harness
 changes, and before any desktop-interactive test. Commands run from the
-repository root. Deployment authorization remains in [AGENTS.md](../AGENTS.md).
+repository root. Follow the [deployment procedure](deployment.md) before
+installing a tested checkout.
 
 ## Safe default test workflow
 

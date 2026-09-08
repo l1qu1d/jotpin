@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const assert = require("node:assert/strict")
+const {execFileSync} = require("node:child_process")
 const {mkdtemp, lstat, mkdir, open, readFile, readdir, rm, writeFile} = require("node:fs/promises")
 const {tmpdir} = require("node:os")
 const {basename, join, relative, resolve} = require("node:path")
@@ -26,6 +27,29 @@ const BINARY_ASSET_EXTENSIONS = new Set([
 ])
 const SETUP_LIKE_BASENAME = /(?:install|installer|setup|uninstall)/i
 const ROOT_DIR = resolve(__dirname, "..")
+
+// Standard plugin installation clones the repository, including documentation.
+// Check the Git payload separately from the narrower security scanner scope.
+function validateAgentInstructionPaths(paths) {
+  const forbidden = paths.filter((path) => (
+    /(^|\/)(agents(?:\.override)?\.md|claude\.md|gemini\.md|\.cursorrules|\.windsurfrules)$/i.test(path)
+    || /(^|\/)(\.agents|\.codex|\.claude|\.cursor)(\/|$)/i.test(path)
+    || /(^|\/)copilot-instructions\.md$/i.test(path)
+  ))
+  assert.deepEqual(forbidden, [], `agent-control files must not ship: ${forbidden.join(", ")}`)
+}
+
+function assertAgentInstructionContract() {
+  validateAgentInstructionPaths(["CONTRIBUTING.md", "docs/deployment.md"])
+  for (const path of ["AGENTS.md", "docs/agents.md", "AGENTS.override.md",
+    "CLAUDE.md", "GEMINI.md", ".cursor/rules/project.mdc",
+    ".github/copilot-instructions.md", ".codex/config.toml", ".agents/skills/example.md"]) {
+    assert.throws(() => validateAgentInstructionPaths([path]), /agent-control files must not ship/)
+  }
+  const tracked = execFileSync("git", ["ls-files", "-z"], {cwd: ROOT_DIR, encoding: "utf8"})
+    .split("\0").filter(Boolean)
+  validateAgentInstructionPaths(tracked)
+}
 
 function normalized(value) {
   return String(value || "").replaceAll("\\", "/")
@@ -219,6 +243,7 @@ async function assertOversizedFixtureDetected() {
 }
 
 async function main() {
+  assertAgentInstructionContract()
   assertScopeContract()
   await assertOversizedFixtureDetected()
   const entries = await scanEntries(await collectTree(ROOT_DIR))

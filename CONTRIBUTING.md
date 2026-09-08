@@ -50,6 +50,12 @@ notes. Live compositor checks are required only for assertions that
 need real window placement, focus, or other desktop behavior; say which live
 behavior remains unverified when you cannot run one.
 
+The source checkout is the development workspace. The installed copy is a
+deployment artifact; do not edit it or packaged files under `/usr/share/omarchy`.
+Follow [the deployment procedure](docs/deployment.md) when installing a tested
+change. Keep JotPin on demand (`keepLoaded: false`) and preserve one shared
+editor across its presentations.
+
 ## Project structure
 
 Start with the guide that matches your change:
