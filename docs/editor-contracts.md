@@ -10,8 +10,7 @@ seconds, Show source opens the editable source. Once revealed, ordinary edits do
 not hide the editor again. Each file load resets this readiness gate.
 
 Read before changing editor, presentation, input, rendering, or persistence
-behavior. These are the implementation requirements routed from
-[AGENTS.md](../AGENTS.md); user notes and active sessions remain protected.
+behavior. Preserve user notes and active sessions throughout development.
 
 ## Architecture and implementation rules
 
