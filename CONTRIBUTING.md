@@ -93,6 +93,22 @@ third-party files out of unrelated changes; when a dependency update requires
 regeneration, explain it and update [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 as needed.
 
+## Omarchy Marketplace updates
+
+Run `omarchy plugin validate .` and the marketplace packaging regression in
+`bash tests/run.sh headless`. Keep `dev.jotpin` stable and keep agent-control
+files outside the distributable repository. Describe changes to runtime
+commands, data access, and bundled dependencies in the update request so the
+maintainer can review the exact build.
+
+After the JotPin pull request is merged and CI passes, use the Marketplace's
+**Verify and publish a newer upstream commit** form with the full public commit
+SHA. The marketplace keeps the prior snapshot on record and shows newer
+upstream code as unverified until review. Follow the
+[Marketplace verification guide](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md).
+
+## License
+
 Contributions are distributed with JotPin under the
 [GNU General Public License, version 3 only](LICENSE) (`GPL-3.0-only`). Keep
 third-party code under its original license and preserve its notices.

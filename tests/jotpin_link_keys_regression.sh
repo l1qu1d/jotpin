@@ -65,7 +65,7 @@ env -u QT_QPA_PLATFORMTHEME -u WAYLAND_DISPLAY -u DISPLAY \
     XDG_RUNTIME_DIR="$TEST_TMP_DIR/runtime" \
     XDG_CACHE_HOME="$TEST_TMP_DIR/cache" \
     QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-    timeout --kill-after=1s 30s quickshell --no-duplicate \
+    timeout --kill-after=1s 60s quickshell --no-duplicate \
       --path "$CONFIG_DIR/shell.qml" >"$OUTPUT_PATH" 2>&1
 status=$?
 set -e
@@ -88,3 +88,18 @@ printf '%s\n' \
   'PASS: Settings dismisses outside, keeps inside clicks, and changes text size without editing notes'
 
 printf 'PASS: typing on the blank row after a checklist preserves paragraphs and undo\n'
+printf 'PASS: wide file tabs wrap independently and respond to wheel and scrollbar input\n'
+printf 'PASS: Enter advances the Live Preview caret before Markdown parsing completes\n'
+printf 'PASS: rapid Backspace keeps the Live Preview caret on its row as it empties\n'
+printf 'PASS: structural edits keep the viewport steady and reveal the settled Live Preview caret\n'
+printf 'PASS: optimistic preview insertion keeps literal punctuation and whitespace\n'
+printf 'PASS: a typed dash starts a bullet below prose and saved Setext headings still render\n'
+printf 'PASS: standalone hashes stay visible and editable until the heading separator\n'
+printf 'PASS: standalone quote, list, and inline markers stay editable while typing\n'
+printf 'PASS: empty, nested, and consecutive quotes align their rails and carets with source rows\n'
+printf 'PASS: the painted caret stays on its row throughout the quote Space transition\n'
+printf 'PASS: live Markdown typing and Backspace cover headings, inline formatting, lists, links, and rules\n'
+printf 'PASS: blank tasks stay clickable and empty table cells and row delimiters stay editable\n'
+printf 'PASS: reference links and fenced-code input preserve their source and rendered rows\n'
+printf 'PASS: caret transitions are stable during typing, selection replacement, Enter, Backspace, and wrapped movement\n'
+printf 'PASS: emoji navigation, selection, Backspace, and undo keep valid source text\n'

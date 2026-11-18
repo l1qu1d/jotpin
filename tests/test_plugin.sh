@@ -423,7 +423,13 @@ assert_block_contains "$card_geometry_block" \
   'anchors.centerIn: root.sideMode ? undefined : parent' \
   'window content does not inherit the drawer anchors'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'visible: root.opened && root.sideMode && !root.screensaverActive' \
+  'root.opened && !root.screensaverActive && !root.sidePlacementRemapping' \
+  'the native window request follows open, secure-surface, and remap state'
+assert_contains "$ROOT_DIR/JotPin.qml" \
+  'root.preparedNativeWindow === root.requestedNativeWindow' \
+  'Hyprland windows wait for their floating rules before mapping'
+assert_contains "$ROOT_DIR/JotPin.qml" \
+  'visible: root.visibleNativeWindow === "side"' \
   'the native side window unmaps while the screensaver or lock is active'
 assert_contains "$ROOT_DIR/JotPin.qml" \
   'title: "JotPin Side " + root.barPosition + " " + root.sidePlacement + " — " +' \
@@ -438,7 +444,7 @@ assert_contains "$ROOT_DIR/JotPin.qml" \
   'maximumSize: Qt.size(' \
   'side mode constrains normal resizing to its horizontal axis'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'visible: root.opened && root.windowMode && !root.screensaverActive' \
+  'visible: root.visibleNativeWindow === "window"' \
   'the centered native window follows JotPin and secure-surface visibility'
 assert_contains "$ROOT_DIR/JotPin.qml" \
   'implicitWidth: Style.space(900)' \
@@ -883,11 +889,11 @@ assert_contains "$ROOT_DIR/NativeMarkdownDisplay.qml" \
   '.jotpin-code-block td' \
   'fenced code retains its dedicated card treatment'
 assert_contains "$ROOT_DIR/scripts/vendor/markdown-entry.mjs" \
-  'padding-top:JOTPIN_QUOTE_GAPpx' \
-  'intentional blank quote rows retain compact vertical separation'
+  'function addBlankQuoteRows(node, children, source, lineStarts)' \
+  'explicit blank quote rows retain editable positions'
 assert_contains "$ROOT_DIR/tests/isolated/native_markdown_parity.qml" \
-  'nested quote text is not indented and vertically separated' \
-  'the production renderer measures nested quote spacing'
+  'Number(nestedText.y) > Number(emptyRow.y)' \
+  'the production renderer measures the editable row before a nested quote'
 assert_contains "$ROOT_DIR/NativeMarkdownDisplay.qml" \
   'function registerRenderedMousePress(sourcePosition)' \
   'native Live click tracking preserves triple-click row selection'
@@ -1183,7 +1189,7 @@ assert_contains "$ROOT_DIR/JotPin.qml" \
   'root.replaceEditorDocumentText(result.source, result.cursor)' \
   'list-marker completion preserves the cursor position'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'editor.cursorSelection.text = nextSource.slice(prefix, nextEnd)' \
+  'editor.cursorSelection.text = nextSource.slice(edit.start, edit.newEnd)' \
   'custom edits preserve the native TextEdit undo stack'
 assert_contains "$ROOT_DIR/JotPin.qml" \
   'function handleListReturn()' \
@@ -1671,32 +1677,26 @@ assert_contains "$ROOT_DIR/JotPin.qml" \
   'readonly property int tabRowHeight: Math.max(Style.space(20),' \
   'file tabs use a stable row height'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'id: tabGrid' \
-  'file tabs use a multi-row grid'
+  'id: tabLayout' \
+  'file tabs have a common scrollable layout'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'rows: fileTabs.visibleTabRows' \
-  'the file-tab grid honors the configured row count'
+  'readonly property int maximumRows: root.fileTabRows' \
+  'the file-tab layout honors the configured row count'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'property int neededTabRows: 1' \
+  'property int occupiedRows: 1' \
   'file tabs calculate their needed row count'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'function updateNeededTabRows()' \
+  'function layoutTabs()' \
   'file tabs measure rows from available width'
 assert_contains "$ROOT_DIR/JotPin.qml" \
   'fileTabRepeater.itemAt(index)' \
   'file tabs measure each tab before wrapping'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'readonly property real occupiedRowsHeight: Math.max(' \
+  'readonly property int occupiedRowsHeight:' \
   'file tabs size to the rows that contain tabs'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'tabGrid.childrenRect.height' \
-  'file tabs do not reserve unused maximum rows'
-assert_contains "$ROOT_DIR/JotPin.qml" \
-  'rowSpacing: Style.spacing.controlGap' \
-  'file-tab rows have explicit vertical spacing'
-assert_contains "$ROOT_DIR/JotPin.qml" \
-  'columns: 0' \
-  'the file-tab grid lets the configured row count determine its columns'
+  'occupiedRows * tabRowHeight + (occupiedRows - 1) * tabGap' \
+  'file tabs reserve space for occupied rows and their gaps'
 assert_contains "$ROOT_DIR/JotPin.qml" \
   'height: fileTabs.tabRowHeight' \
   'file-tab delegates share the configured row height'
@@ -1798,8 +1798,8 @@ assert_contains "$ROOT_DIR/JotPin.qml" \
   'id: tabScrollRail' \
   'the file tab scrollbar has an explicit visual identity'
 assert_contains "$ROOT_DIR/JotPin.qml" \
-  'height: visible ? Style.space(2) : 0' \
-  'the file tab scrollbar has enough height to see'
+  'height: visible ? Math.max(12, Style.space(14)) : 0' \
+  'the file tab scrollbar exposes a padded drag area'
 assert_contains "$ROOT_DIR/JotPin.qml" \
   'visible: contentRange > 0' \
   'the file tab scrollbar hides when tabs fit'

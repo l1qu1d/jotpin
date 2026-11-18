@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "EditorModel.js" as EditorModel
 import "SpellcheckModel.js" as SpellcheckModel
@@ -112,6 +113,17 @@ Item {
   property string presentationMode: "side"
   property string sidePlacement: "right"
   property bool sidePlacementRemapping: false
+  readonly property bool needsHyprlandWindowRules:
+    Boolean(Quickshell.env("WAYLAND_DISPLAY")) &&
+    Boolean(Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
+  readonly property string requestedNativeWindow:
+    root.opened && !root.screensaverActive && !root.sidePlacementRemapping
+      ? root.presentationMode : ""
+  property string preparedNativeWindow: ""
+  readonly property string visibleNativeWindow:
+    !root.needsHyprlandWindowRules ||
+      root.preparedNativeWindow === root.requestedNativeWindow
+      ? root.requestedNativeWindow : ""
   property bool presentationSettingsLoaded: false
   property bool presentationSettingsHydrating: false
   property string pendingPresentationMode: ""
@@ -138,6 +150,7 @@ Item {
   property int historyInputModifiers: 0
   property string pendingEditorStateRestorePath: ""
   property real pendingEditorStateScrollY: 0
+  property bool liveCursorRevealPending: false
   property bool viewCaretAlignmentPending: false
   property bool pendingViewCaretRawMode: false
   property int pendingViewCaretPosition: -1
@@ -505,13 +518,13 @@ Item {
     return slash > 0 ? root.notePath.slice(0, slash) : "."
   }
 
-  readonly property color foreground: Color.popups.text
-  readonly property color background: Color.popups.background
-  readonly property color border: Color.popups.border
+  readonly property color foreground: Commons.Color.popups.text
+  readonly property color background: Commons.Color.popups.background
+  readonly property color border: Commons.Color.popups.border
   readonly property color editorBackground: Qt.rgba(
     root.foreground.r, root.foreground.g, root.foreground.b, 0.035)
   readonly property color scrim: Qt.rgba(
-    Color.background.r, Color.background.g, Color.background.b, 0.48)
+    Commons.Color.background.r, Commons.Color.background.g, Commons.Color.background.b, 0.48)
   readonly property var surfaceBorder: Border.surfaceSpec(
     "popups", "border", root.border, Math.max(1, Style.space(1)))
 
@@ -2733,24 +2746,18 @@ Item {
   }
 
   function queueSpellcheckEdit(previousSourceValue, nextSourceValue) {
+    if (root.spellcheckNeedsFullCheck && root.misspellings.length === 0) return
     var previousSource = String(previousSourceValue || "")
     var nextSource = String(nextSourceValue || "")
     if (previousSource === nextSource) return
-    var edit = SpellcheckModel.deriveSpellcheckEdit(
-      previousSource, nextSource)
-    if (!edit || !isFinite(Number(edit.start)) ||
-        !isFinite(Number(edit.oldEnd))) {
-      root.spellcheckNeedsFullCheck = true
-      root.spellcheckPendingEdits = []
-      return
-    }
+    var edit = EditorModel.sourceEditBounds(previousSource, nextSource)
     root.rebaseVisibleMisspellingsForEdit(previousSource, nextSource, edit)
     if (root.spellcheckNeedsFullCheck) return
     var pending = root.spellcheckPendingEdits.slice()
     pending.push({
       start: Number(edit.start),
       removed: previousSource.slice(Number(edit.start), Number(edit.oldEnd)),
-      inserted: String(edit.insertedText || "")
+      inserted: nextSource.slice(edit.start, edit.newEnd)
     })
     // A very long burst is cheaper and safer to resynchronize as one full
     // document than to retain an unbounded sequence of intermediate edits.
@@ -2764,6 +2771,7 @@ Item {
 
   function invalidateSpellcheckForSourceChange(previousSourceValue,
       nextSourceValue) {
+    if (!root.spellcheckEnabled) return
     root.spellcheckSourceRevision++
     root.spellcheckRequestId++
     root.spellcheckSuggestionRequestId++
@@ -3899,7 +3907,8 @@ Item {
 
   function luaString(value) {
     return "\"" + String(value).replace(/\\/g, "\\\\")
-      .replace(/\"/g, "\\\"") + "\""
+      .replace(/\"/g, "\\\"").replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r") + "\""
   }
 
   function moveJotPinToFocusedWorkspace() {
@@ -4013,28 +4022,16 @@ Item {
       return false
     }
 
-    var prefix = 0
-    var sharedLength = Math.min(current.length, nextSource.length)
-    while (prefix < sharedLength && current[prefix] === nextSource[prefix]) {
-      prefix++
-    }
-
-    var currentEnd = current.length
-    var nextEnd = nextSource.length
-    while (currentEnd > prefix && nextEnd > prefix &&
-        current[currentEnd - 1] === nextSource[nextEnd - 1]) {
-      currentEnd--
-      nextEnd--
-    }
-
+    var edit = EditorModel.sourceEditBounds(current, nextSource)
     // Replacing the selected document range keeps Qt's native undo stack.
     // Assigning TextEdit.text calls setPlainText(), which clears that stack.
     root.editorUpdating = true
-    editor.select(prefix, currentEnd)
-    editor.cursorSelection.text = nextSource.slice(prefix, nextEnd)
+    editor.select(edit.start, edit.oldEnd)
+    editor.cursorSelection.text = nextSource.slice(edit.start, edit.newEnd)
     editor.cursorPosition = nextCursor
     root.editorPreviousText = String(editor.text || "")
     root.editorUpdating = false
+    root.syncLiveCursor()
 
     return true
   }
@@ -4294,6 +4291,13 @@ Item {
     var result = EditorModel.listBackspace(
       source, editor.cursorPosition, selectionStart, selectionEnd,
       !root.rawMode)
+    // Generated delimiters use ASCII. Let Qt delete a non-ASCII character
+    // using its native rules for emoji and other multi-code-point text.
+    var cursorPosition = editor.cursorPosition
+    if (!result.handled && selectionStart === selectionEnd &&
+        source.charCodeAt(cursorPosition - 1) >= 128 &&
+        !EditorModel.splitsSurrogatePair(source, cursorPosition))
+      return false
     if (!result.handled) result = EditorModel.plainBackspace(
       source, editor.cursorPosition, selectionStart, selectionEnd)
     if (!result.handled && !root.rawMode) {
@@ -4970,20 +4974,24 @@ Item {
   }
 
   function ensureEditorCursorVisible(force) {
-    if (!root.opened || root.taskToggleViewportRestorePending ||
-        (!editor.activeFocus && !force)) return
-    var cursor = editor.cursorRectangle
-    if (!root.rawMode && String(editor.text || "") !== "" &&
-        renderedEditor.layoutReady &&
-        renderedEditor.layoutMatchesCurrentInput()) {
-      // Live Markdown hides source markers and uses its own line metrics. A
-      // click is already positioned in this rendered coordinate space, so do
-      // not let the transparent plain-text editor move the viewport to its
-      // different source-layout Y position.
-      var renderedCursor = renderedEditor.cursorRectangleForSource(
-        editor.cursorPosition)
-      if (renderedCursor) cursor = renderedCursor
+    if (!root.opened || root.loadingFromFile || root.restoringEditorState ||
+        root.pendingEditorStateRestorePath !== "" ||
+        root.taskToggleViewportRestorePending || root.viewCaretAlignmentPending ||
+        (!editor.activeFocus && !force)) {
+      root.liveCursorRevealPending = false
+      return
     }
+    var cursor = editor.cursorRectangle
+    if (!root.rawMode && editor.length > 0) {
+      cursor = renderedEditor.cursorRectangleForSource(editor.cursorPosition)
+      // The source and preview wrap differently. Keep the viewport still
+      // until a structural edit has a fresh rendered caret.
+      if (!cursor) {
+        root.liveCursorRevealPending = true
+        return
+      }
+    }
+    root.liveCursorRevealPending = false
     var top = editorViewport.contentY
     var bottom = top + editorViewport.height
     if (cursor.y < top) editorViewport.contentY = Math.max(0, cursor.y)
@@ -5025,6 +5033,7 @@ Item {
       editorViewport.contentHeight - editorViewport.height)
     var amount = Number(delta)
     if (!isFinite(amount) || amount === 0) return
+    root.liveCursorRevealPending = false
     editorViewport.contentY = Math.max(0, Math.min(maximumContentY,
       editorViewport.contentY - amount * root.editorWheelScrollFactor))
   }
@@ -5116,6 +5125,9 @@ Item {
       return
     }
 
+    // Range replacement can publish a layout while Qt's selected range is
+    // still being replaced. The edit publishes its final caret at commit.
+    if (root.editorUpdating) return
     var requestedPosition = Number(editor.cursorPosition)
     if (!renderedEditor.layoutReady ||
         renderedEditor.layoutSourceText !== String(editor.text || "") ||
@@ -5844,6 +5856,27 @@ Item {
   }
 
   Process {
+    id: windowRulesProcess
+    command: ["timeout", "3s", "hyprctl", "eval", "dofile(" +
+      root.luaString(root.pathFromUrl(Qt.resolvedUrl("hypr/jotpin.lua"))) + ")"]
+    stderr: StdioCollector { id: windowRulesError }
+
+    onExited: function(exitCode) {
+      if (root.requestedNativeWindow === "") return
+      if (exitCode !== 0) {
+        console.warn("JotPin floating window setup failed: " +
+          (windowRulesError.text.trim() || exitCode))
+        Quickshell.execDetached(["omarchy-notification-send", "JotPin",
+          "Could not open the floating window. Check the Omarchy shell log."])
+        root.dismiss()
+        return
+      }
+      root.preparedNativeWindow = root.requestedNativeWindow
+      workspaceRelocationTimer.restart()
+    }
+  }
+
+  Process {
     id: presentationSettingsDirectoryProcess
 
     onExited: function(exitCode) {
@@ -6374,12 +6407,20 @@ Item {
   }
 
   onOpenedChanged: {
+    if (!root.opened) root.liveCursorRevealPending = false
     if (!root.opened) root.controlKeyHeld = false
     if (!root.opened) workspaceRelocationTimer.stop()
     if (!root.opened) root.maximizeStateObserved = false
     if (root.opened) root.scheduleSpellcheck()
     else root.resetSpellcheckForDocumentChange()
     root.syncFocusMode()
+  }
+  onRequestedNativeWindowChanged: {
+    root.preparedNativeWindow = ""
+    // Static rules must be present before the toplevel maps. Re-register on
+    // each map because a Hyprland config reload removes runtime rules.
+    if (root.requestedNativeWindow !== "" && root.needsHyprlandWindowRules)
+      windowRulesProcess.running = true
   }
   onLoadingFromFileChanged: {
     if (root.loadingFromFile) {
@@ -6396,6 +6437,7 @@ Item {
     }
   }
   onNotePathChanged: {
+    root.liveCursorRevealPending = false
     root.resetSpellcheckForDocumentChange()
     if (root.loadingFromFile && root.presentationSettingsLoaded)
       root.armNoteLoadWatchdog(root.notePath, true)
@@ -6404,7 +6446,10 @@ Item {
     if (root.presentationSettingsLoaded && root.loadingFromFile)
       root.armNoteLoadWatchdog(root.notePath, true)
   }
-  onRawModeChanged: root.queueSpellingGeometryUpdate(true)
+  onRawModeChanged: {
+    root.liveCursorRevealPending = false
+    root.queueSpellingGeometryUpdate(true)
+  }
   onPresentationModeChanged: {
     root.maximizeStatePending = false
     root.maximizeStateObserved = false
@@ -6428,8 +6473,7 @@ Item {
 
   FloatingWindow {
     id: sideWindow
-    visible: root.opened && root.sideMode && !root.screensaverActive &&
-      !root.sidePlacementRemapping
+    visible: root.visibleNativeWindow === "side"
     title: "JotPin Side " + root.barPosition + " " + root.sidePlacement + " — " +
       root.fileNameForPath(root.notePath)
     color: "transparent"
@@ -6461,7 +6505,7 @@ Item {
 
   FloatingWindow {
     id: centerWindow
-    visible: root.opened && root.windowMode && !root.screensaverActive
+    visible: root.visibleNativeWindow === "window"
     title: "JotPin Window — " + root.fileNameForPath(root.notePath)
     color: root.background
     implicitWidth: Style.space(900)
@@ -7068,56 +7112,60 @@ Item {
               Style.font.bodySmall + Style.spacing.panelPadding)
             readonly property int tabRowHeight: Math.max(Style.space(20),
               singleRowHeight - Style.space(12))
-            property int neededTabRows: 1
-            property bool tabRowsUpdatePending: false
-            readonly property int visibleTabRows: Math.max(
-              root.minimumFileTabRows,
-              Math.min(root.maximumFileTabRows,
-                Math.min(root.fileTabRows, neededTabRows)))
-            readonly property real occupiedRowsHeight: Math.max(
-              tabRowHeight, tabGrid.childrenRect.height)
+            readonly property int maximumRows: root.fileTabRows
+            readonly property int tabGap: Style.spacing.controlGap
+            property int occupiedRows: 1
+            property bool layoutPending: false
+            readonly property int occupiedRowsHeight:
+              occupiedRows * tabRowHeight + (occupiedRows - 1) * tabGap
 
-            function updateNeededTabRows() {
-              var availableWidth = Number(fileTabsViewport.width)
-              if (!isFinite(availableWidth) || availableWidth <= 0) {
-                fileTabs.neededTabRows = root.minimumFileTabRows
-                return
-              }
-
-              var rows = root.minimumFileTabRows
-              var rowWidth = 0
-              var gap = Number(Style.spacing.controlGap)
+            function layoutTabs() {
+              var availableWidth = fileTabsViewport.width
+              if (availableWidth <= 0) return
+              var rowWidths = [0]
+              var widestRow = 0
               for (var index = 0; index < fileTabRepeater.count; index++) {
                 var tab = fileTabRepeater.itemAt(index)
-                if (!tab || !tab.visible) continue
-                var tabWidth = Number(tab.width)
-                if (!isFinite(tabWidth) || tabWidth <= 0) continue
-                if (rowWidth > 0 && rowWidth + gap + tabWidth >
-                    availableWidth) {
-                  rows++
-                  rowWidth = tabWidth
-                } else {
-                  rowWidth += (rowWidth > 0 ? gap : 0) + tabWidth
+                if (!tab || tab.width <= 0) continue
+                // Independent rows let shorter tabs fill the space beside
+                // earlier tabs even after a long filename starts a new row.
+                var row = 0
+                while (row < rowWidths.length && rowWidths[row] > 0 &&
+                    rowWidths[row] + tabGap + tab.width > availableWidth) row++
+                if (row === rowWidths.length) {
+                  if (row < maximumRows) rowWidths.push(0)
+                  else row--
                 }
+                tab.x = rowWidths[row] > 0 ? rowWidths[row] + tabGap : 0
+                tab.y = row * (tabRowHeight + tabGap)
+                rowWidths[row] = tab.x + tab.width
+                widestRow = Math.max(widestRow, rowWidths[row])
               }
-              fileTabs.neededTabRows = rows
+              occupiedRows = rowWidths.length
+              tabLayout.width = widestRow
+              fileTabsViewport.contentX = Math.max(0, Math.min(
+                widestRow - availableWidth, fileTabsViewport.contentX))
             }
 
-            function scheduleNeededTabRowsUpdate() {
-              if (fileTabs.tabRowsUpdatePending) return
-              fileTabs.tabRowsUpdatePending = true
+            function scheduleTabLayout() {
+              if (layoutPending) return
+              layoutPending = true
               Qt.callLater(function() {
-                fileTabs.tabRowsUpdatePending = false
-                fileTabs.updateNeededTabRows()
+                fileTabs.layoutPending = false
+                fileTabs.layoutTabs()
               })
             }
 
-            Component.onCompleted: fileTabs.scheduleNeededTabRowsUpdate()
+            onMaximumRowsChanged: scheduleTabLayout()
+            onTabGapChanged: scheduleTabLayout()
+            onTabRowHeightChanged: scheduleTabLayout()
+            Component.onCompleted: scheduleTabLayout()
             height: Math.max(singleRowHeight,
-              occupiedRowsHeight + Style.space(12))
+              occupiedRowsHeight + Math.max(Style.space(12), tabScrollRail.height))
 
             Flickable {
               id: fileTabsViewport
+              objectName: "fileTabsViewport"
               anchors.left: parent.left
               anchors.right: addFileButton.left
               anchors.rightMargin: Style.spacing.controlGap
@@ -7126,37 +7174,29 @@ Item {
               clip: true
               boundsBehavior: Flickable.StopAtBounds
               flickableDirection: Flickable.HorizontalFlick
-              contentWidth: Math.max(width, tabGrid.width)
-              contentHeight: Math.max(height, tabGrid.childrenRect.height)
-              onWidthChanged: fileTabs.scheduleNeededTabRowsUpdate()
+              contentWidth: Math.max(width, tabLayout.width)
+              contentHeight: height
+              onWidthChanged: fileTabs.scheduleTabLayout()
 
-              Grid {
-                id: tabGrid
-                rows: fileTabs.visibleTabRows
-                columns: 0
-                flow: Grid.LeftToRight
-                width: implicitWidth
-                rowSpacing: Style.spacing.controlGap
-                columnSpacing: Style.spacing.controlGap
+              Item {
+                id: tabLayout
+                height: fileTabs.occupiedRowsHeight
 
                 Repeater {
                   id: fileTabRepeater
                   model: root.openFiles
 
-                  onItemAdded: function(index, item) {
-                    fileTabs.scheduleNeededTabRowsUpdate()
-                  }
-                  onItemRemoved: function(index, item) {
-                    fileTabs.scheduleNeededTabRowsUpdate()
-                  }
+                  onItemAdded: fileTabs.scheduleTabLayout()
+                  onItemRemoved: fileTabs.scheduleTabLayout()
 
                   delegate: Item {
                     id: fileTab
+                    objectName: "fileTab_" + index
                     readonly property bool activeTab:
                       modelData.path === root.notePath
                     width: tabName.width + Style.space(2) + closeTabButton.width
                     height: fileTabs.tabRowHeight
-                    onWidthChanged: fileTabs.scheduleNeededTabRowsUpdate()
+                    onWidthChanged: fileTabs.scheduleTabLayout()
 
                     Row {
                       width: parent.width
@@ -7250,7 +7290,7 @@ Item {
                           background: Rectangle {
                             color: root.editorBackground
                             radius: Style.cornerRadius
-                            border.color: Color.accent
+                            border.color: Commons.Color.accent
                             border.width: Math.max(1, Style.space(1))
                           }
                         }
@@ -7279,25 +7319,23 @@ Item {
 
             }
 
-            Rectangle {
+            Item {
               id: tabScrollRail
+              objectName: "fileTabScrollRail"
               anchors.left: parent.left
               anchors.right: addFileButton.left
               anchors.rightMargin: Style.spacing.controlGap
               anchors.bottom: parent.bottom
-              height: visible ? Style.space(2) : 0
+              height: visible ? Math.max(12, Style.space(14)) : 0
               visible: contentRange > 0
               z: 2
-              radius: height / 2
-              color: Qt.rgba(root.foreground.r, root.foreground.g,
-                root.foreground.b, 0.22)
 
               readonly property real contentRange: Math.max(
                 0, fileTabsViewport.contentWidth - fileTabsViewport.width)
-              readonly property real thumbWidth: Math.max(
+              readonly property real thumbWidth: Math.min(width, Math.max(
                 Style.space(44),
-                Math.min(width, width * fileTabsViewport.width /
-                  Math.max(fileTabsViewport.contentWidth, width)))
+                width * fileTabsViewport.width /
+                  Math.max(1, fileTabsViewport.contentWidth)))
               readonly property real thumbTravel: Math.max(
                 0, width - thumbWidth)
               readonly property real thumbX: contentRange > 0 && thumbTravel > 0
@@ -7312,10 +7350,21 @@ Item {
               }
 
               Rectangle {
+                id: tabScrollTrack
+                width: parent.width
+                height: Math.max(3, Style.space(4))
+                anchors.verticalCenter: parent.verticalCenter
+                radius: height / 2
+                color: Qt.rgba(root.foreground.r, root.foreground.g,
+                  root.foreground.b, 0.22)
+              }
+
+              Rectangle {
                 id: tabScrollThumb
+                objectName: "fileTabScrollThumb"
                 x: tabScrollRail.thumbX
                 width: tabScrollRail.thumbWidth
-                height: parent.height
+                height: tabScrollTrack.height
                 anchors.verticalCenter: parent.verticalCenter
                 radius: height / 2
                 color: Qt.rgba(root.foreground.r, root.foreground.g,
@@ -7324,28 +7373,43 @@ Item {
 
               MouseArea {
                 anchors.fill: parent
-                property bool draggingThumb: false
                 property real pointerOffset: 0
 
                 onPressed: function(mouse) {
-                  draggingThumb = mouse.x >= tabScrollThumb.x &&
+                  fileTabsViewport.cancelFlick()
+                  var pressedThumb = mouse.x >= tabScrollThumb.x &&
                     mouse.x <= tabScrollThumb.x + tabScrollThumb.width
-                  pointerOffset = draggingThumb
+                  pointerOffset = pressedThumb
                     ? mouse.x - tabScrollThumb.x
                     : tabScrollThumb.width / 2
-                  if (!draggingThumb) {
+                  if (!pressedThumb)
                     tabScrollRail.setScrollFromThumb(mouse.x - pointerOffset)
-                  }
                 }
 
                 onPositionChanged: function(mouse) {
-                  if (pressed && draggingThumb) {
+                  if (pressed)
                     tabScrollRail.setScrollFromThumb(mouse.x - pointerOffset)
-                  }
                 }
+              }
+            }
 
-                onReleased: draggingThumb = false
-                onCanceled: draggingThumb = false
+            MouseArea {
+              anchors.left: fileTabsViewport.left
+              anchors.right: fileTabsViewport.right
+              anchors.top: fileTabsViewport.top
+              anchors.bottom: parent.bottom
+              z: 3
+              enabled: tabScrollRail.visible
+              acceptedButtons: Qt.NoButton
+
+              onWheel: function(wheel) {
+                var delta = wheel.pixelDelta.x || wheel.pixelDelta.y ||
+                  (wheel.angleDelta.x || wheel.angleDelta.y) * Style.space(44) / 120
+                wheel.accepted = delta !== 0
+                if (!delta) return
+                fileTabsViewport.cancelFlick()
+                fileTabsViewport.contentX = Math.max(0, Math.min(
+                  tabScrollRail.contentRange, fileTabsViewport.contentX - delta))
               }
             }
 
@@ -7608,7 +7672,7 @@ Item {
                       : count !== "" ? count : root.editorCommandMessage
                   }
                   color: root.editorCommandMessage === "No matches"
-                    ? Color.accent : Qt.darker(root.foreground, 1.35)
+                    ? Commons.Color.accent : Qt.darker(root.foreground, 1.35)
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
                   elide: Text.ElideRight
@@ -8040,11 +8104,11 @@ Item {
                 selectionStart: editor.selectionStart
                 selectionEnd: editor.selectionEnd
                 selectionRenderingEnabled: !root.rawMode
-                selectionFill: Style.selectionFillFor(root.foreground, Color.accent)
+                selectionFill: Style.selectionFillFor(root.foreground, Commons.Color.accent)
                 foreground: root.foreground
                 background: root.editorBackground
                 surfaceBackground: root.background
-                accent: Color.accent
+                accent: Commons.Color.accent
                 baseUrl: root.fileUrlForPath(root.noteDirectory + "/")
                 homePath: root.home
                 fontFamily: Style.font.family
@@ -8104,6 +8168,8 @@ Item {
                   // the caret immediately and retain one polish-frame retry
                   // for table/overlay geometry that settles asynchronously.
                   root.syncLiveCursor()
+                  if (root.liveCursorRevealPending)
+                    Qt.callLater(root.ensureEditorCursorVisible)
                   if (!liveCursorGeometrySettle.running)
                     liveCursorGeometrySettle.start()
                   root.queueSpellingGeometryUpdate()
@@ -8121,7 +8187,7 @@ Item {
                   root.noteLoadError === ""
                 color: root.rawMode ? root.foreground : "transparent"
                 selectionColor: root.rawMode
-                  ? Style.selectionFillFor(root.foreground, Color.accent)
+                  ? Style.selectionFillFor(root.foreground, Commons.Color.accent)
                   : "transparent"
                 selectedTextColor: root.rawMode ? root.foreground : "transparent"
                 textFormat: TextEdit.PlainText
@@ -8367,7 +8433,7 @@ Item {
                 y: renderedEditor.y + root.liveCursorRect.y
                 width: Math.max(1, Style.space(1))
                 height: Math.max(1, root.liveCursorRect.height)
-                color: Color.accent
+                color: Commons.Color.accent
                 visible: !root.rawMode
                   && renderedEditor.selectedImageIndex < 0
                   && editor.activeFocus
@@ -8563,7 +8629,7 @@ Item {
                 id: footerStatus
                 width: parent.width
                 text: root.statusText
-                color: root.dirty ? Color.accent : Qt.darker(root.foreground, 1.45)
+                color: root.dirty ? Commons.Color.accent : Qt.darker(root.foreground, 1.45)
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
                 elide: Text.ElideRight
@@ -8664,7 +8730,7 @@ Item {
                     id: keyLabel
                     width: parent.keyColumnWidth
                     text: modelData.keys
-                    color: Color.accent
+                    color: Commons.Color.accent
                     font.family: Style.font.family
                     font.pixelSize: Style.font.bodySmall
                     font.bold: true
@@ -8865,7 +8931,7 @@ Item {
                   visible: root.settingsMessage !== ""
                   text: root.settingsMessage
                   color: root.settingsMessage.indexOf("Could not") === 0
-                    ? Color.accent : Qt.darker(root.foreground, 1.35)
+                    ? Commons.Color.accent : Qt.darker(root.foreground, 1.35)
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
                   wrapMode: Text.WordWrap
@@ -9283,7 +9349,7 @@ Item {
                 Text {
                   visible: root.fileChooserMessage !== ""
                   text: root.fileChooserMessage
-                  color: Color.accent
+                  color: Commons.Color.accent
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
                   wrapMode: Text.WordWrap

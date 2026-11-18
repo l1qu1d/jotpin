@@ -38,8 +38,9 @@ JotPin opens as a Side drawer on the right. Press `Ctrl+N` to create a note,
 Use `F1` for shortcut help and `Ctrl+,` for settings. In settings, choose your
 notes folder, drawer edge, text size, and keyboard shortcuts.
 
-The standard installation adds the plugin but does not configure a global
-shortcut, Apps entry, or floating-window rules. For those integrations, follow
+JotPin registers its bundled Hyprland rules before showing the Side drawer or
+centered window, so either presentation floats without moving tiled windows.
+For a global shortcut or Apps entry, follow
 [desktop integration and deployment](docs/deployment.md). `SUPER + N` is the
 suggested global shortcut; it is added only when available. After installing
 the desktop integration, press `SUPER + A`, search for `JotPin`, and open it
@@ -104,8 +105,9 @@ from the Apps list.
 - Create, open, reopen from `Recent Files`, save, and `Save As` ordinary `.md`
   files from the grouped `File` menu. Non-Markdown extensions are rejected.
 - Work across a horizontally scrollable tab strip with one to five configured
-  rows. Tab labels hide `.md`, and a double-click or `F2` renames the filename
-  stem without replacing an existing file.
+  rows. Use the mouse wheel over the tabs or drag anywhere on the scrollbar
+  to reach a long filename. Tab labels hide `.md`, and a double-click or `F2`
+  renames the filename stem without replacing an existing file.
 - Restore the active note, open tabs, newly created notes, presentation, and
   settings after the panel or shell restarts.
 - Autosave after 1.5 seconds of inactivity, save immediately with `Ctrl+S`,
@@ -247,8 +249,9 @@ when you intentionally want to remove the corresponding user data.
 ## Requirements
 
 JotPin runs inside Omarchy's Quickshell process and uses the packaged
-`qs.Commons` and `qs.Ui` QML modules. Local file operations use GNU coreutils
-and findutils, which are included with Omarchy.
+`qs.Commons` and `qs.Ui` QML modules. Floating windows use Hyprland's Lua
+configuration API through `hyprctl`. Omarchy includes these dependencies,
+GNU coreutils, and findutils.
 
 No account or cloud service is needed. Markdown parsing, syntax highlighting,
 and English (US) spellcheck run locally with bundled workers and dictionaries.

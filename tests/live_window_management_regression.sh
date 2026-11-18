@@ -18,7 +18,6 @@ quickshell_pid=""
 fixture_pid=""
 window_address=""
 fixture_address=""
-rule_loaded=false
 special_workspace_open=false
 
 fail() {
@@ -60,9 +59,6 @@ cleanup() {
   stop_test_window
   close_special_workspace
   stop_fixture
-  if [[ "$rule_loaded" == true ]]; then
-    hyprctl reload >/dev/null 2>&1 || true
-  fi
   rm -rf -- "$TEST_TMP_DIR"
 }
 trap cleanup EXIT
@@ -81,7 +77,10 @@ cp -- "$ROOT_DIR/JotPin.qml" "$ROOT_DIR/JotPinButton.qml" \
   "$ROOT_DIR/SpellcheckModel.js" "$ROOT_DIR/SyntaxHighlight.js" \
   "$CONFIG_DIR/jotpin/"
 mkdir -m 700 -p -- "$CONFIG_DIR/jotpin/markdown" \
-  "$CONFIG_DIR/jotpin/spellcheck" "$CONFIG_DIR/jotpin/syntax"
+  "$CONFIG_DIR/jotpin/spellcheck" "$CONFIG_DIR/jotpin/syntax" \
+  "$CONFIG_DIR/jotpin/hypr" "$CONFIG_DIR/jotpin/assets"
+cp -- "$ROOT_DIR/hypr/jotpin.lua" "$CONFIG_DIR/jotpin/hypr/"
+cp -- "$ROOT_DIR/assets/jotpin-icon.png" "$CONFIG_DIR/jotpin/assets/"
 cp -- "$ROOT_DIR/markdown/MarkdownParserWorker.js" \
   "$CONFIG_DIR/jotpin/markdown/"
 cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" "$ROOT_DIR/spellcheck/DictionaryPart1.mjs" "$ROOT_DIR/spellcheck/DictionaryPart2.mjs" "$CONFIG_DIR/jotpin/spellcheck/"
@@ -90,24 +89,18 @@ cp -- "$ROOT_DIR/tests/qml/live_window_management.qml" "$CONFIG_DIR/shell.qml"
 cp -- "$ROOT_DIR/tests/qml/special_workspace_fixture.qml" \
   "$CONFIG_DIR/special_workspace_fixture.qml"
 cp -- "$ROOT_DIR/tests/fixtures/persistence-base.md" "$TEST_NOTE_PATH"
-if [[ -f "$HOME/.config/omarchy/shell.toml" ]]; then
-  cp -- "$HOME/.config/omarchy/shell.toml" \
-    "$TEST_HOME/.config/omarchy/shell.toml"
-fi
-
-if ! rule_output="$(hyprctl eval \
-    "dofile([[$ROOT_DIR/hypr/jotpin.lua]])" 2>&1)"; then
-  fail "could not load the transient JotPin window rules: $rule_output"
-fi
-rule_loaded=true
+printf '%s\n' '[font]' 'base-size = 10' > "$TEST_HOME/.config/omarchy/shell.toml"
 
 launch_test_window() {
   local mode="$1"
   local title="$2"
   local toggle_maximized="${3:-0}"
+  local bar_size
+  bar_size="$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .reserved[1]')"
   : >"$OUTPUT_PATH"
   HOME="$TEST_HOME" JOTPIN_TEST_NOTE="$TEST_NOTE_PATH" \
     JOTPIN_TEST_MODE="$mode" \
+    JOTPIN_TEST_BAR_SIZE="$bar_size" \
     JOTPIN_TEST_TOGGLE_MAXIMIZED="$toggle_maximized" \
     quickshell --no-duplicate --path "$CONFIG_DIR/shell.qml" \
     >"$OUTPUT_PATH" 2>&1 &
@@ -165,6 +158,11 @@ client_json() {
     '.[] | select(.address == $address)'
 }
 
+tiled_fixture_geometry() {
+  hyprctl clients -j | jq -ce --arg address "$fixture_address" \
+    '.[] | select(.address == $address and .floating == false) | {at,size}'
+}
+
 wait_for_client() {
   local expression="$1"
   local state=""
@@ -217,30 +215,15 @@ dispatch_fullscreen_mode() {
   fi
 }
 
-launch_test_window window "$CENTER_TITLE"
-normal_state="$(wait_for_client \
-  '.floating == true and .fullscreen == 0 and .size == [750,583]')"
-normal_size="$(jq -c '.size' <<<"$normal_state")"
-printf '%s\n' \
-  "PASS: centered JotPin opens floating at its theme-scaled size $normal_size"
-
-fullscreen_binding="$(hyprctl binds -j | jq -c \
-  '[.[] | select(.description == "Full screen" and .mouse == false)][-1]')"
-[[ "$fullscreen_binding" != "null" ]] || fail "active Full screen binding was not found"
-[[ "$(jq -r '.key' <<<"$fullscreen_binding")" != "null" ]] || \
-  fail "active Full screen action has no keyboard binding"
-
-dispatch_fullscreen_mode fullscreen
-wait_for_client '.fullscreen != 0' >/dev/null
-dispatch_fullscreen_mode fullscreen
-restored_state="$(wait_for_client ".fullscreen == 0 and .size == $normal_size")"
-[[ "$(jq -c '.size' <<<"$restored_state")" == "$normal_size" ]] || \
-  fail "centered JotPin did not restore its previous size"
-printf '%s\n' 'PASS: centered JotPin fullscreen restores its previous size'
-stop_test_window
-
+launch_special_fixture
+fixture_geometry_before="$(tiled_fixture_geometry)" || fail 'expected a tiled neighbor'
 launch_test_window side "$SIDE_TITLE" 1
-side_state="$(wait_for_client '.floating == true and .fullscreen == 0')"
+side_state="$(client_json)"
+jq -e '.floating == true and .fullscreen == 0' <<<"$side_state" >/dev/null || \
+  fail "Side did not map floating: $side_state"
+[[ "$(tiled_fixture_geometry)" == "$fixture_geometry_before" ]] || \
+  fail 'opening Side shifted the tiled neighbor'
+printf '%s\n' 'PASS: Side floats at map time and leaves the tiled neighbor in place'
 wait_for_icon_state false '󰘖'
 side_size="$(jq -c '.size' <<<"$side_state")"
 side_monitor_id="$(jq -r '.monitor' <<<"$side_state")"
@@ -298,7 +281,29 @@ wait_for_client ".size[0] == $requested_width and .size[1] == $side_height" >/de
 printf '%s\n' 'PASS: Side accepts horizontal resizing while preserving monitor height'
 
 stop_test_window
-launch_special_fixture
+
+launch_test_window window "$CENTER_TITLE"
+normal_state="$(wait_for_client \
+  '.floating == true and .fullscreen == 0 and .size == [750,583]')"
+normal_size="$(jq -c '.size' <<<"$normal_state")"
+printf '%s\n' \
+  "PASS: centered JotPin opens floating at its theme-scaled size $normal_size"
+
+fullscreen_binding="$(hyprctl binds -j | jq -c \
+  '[.[] | select(.description == "Full screen" and .mouse == false)][-1]')"
+[[ "$fullscreen_binding" != "null" ]] || fail "active Full screen binding was not found"
+[[ "$(jq -r '.key' <<<"$fullscreen_binding")" != "null" ]] || \
+  fail "active Full screen action has no keyboard binding"
+
+dispatch_fullscreen_mode fullscreen
+wait_for_client '.fullscreen != 0' >/dev/null
+dispatch_fullscreen_mode fullscreen
+restored_state="$(wait_for_client ".fullscreen == 0 and .size == $normal_size")"
+[[ "$(jq -c '.size' <<<"$restored_state")" == "$normal_size" ]] || \
+  fail "centered JotPin did not restore its previous size"
+printf '%s\n' 'PASS: centered JotPin fullscreen restores its previous size'
+stop_test_window
+
 show_special_fixture
 launch_test_window side "$SIDE_TITLE"
 special_jotpin_state="$(wait_for_client \

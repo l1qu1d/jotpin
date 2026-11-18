@@ -949,9 +949,23 @@ equal(
 
 equal(
   model.completeListMarker("text\n-", "text\n", 6),
-  { changed: true, source: "text\n- ", cursor: 7 },
-  "Typing a list marker inserts its Markdown separator and preserves the caret"
+  { changed: true, source: "text\n\n- ", cursor: 8 },
+  "Typing a dash directly below a paragraph starts a separate bullet"
 )
+for (const [before, cursor, expected, expectedCursor] of [
+  ["text\r\n", 6, "text\r\n\r\n- ", 10],
+  ["text\n\n", 6, "text\n\n- ", 8],
+  ["- first\n", 8, "- first\n- ", 10],
+  ["# Heading\n", 10, "# Heading\n- ", 12],
+  ["- Parent\n  ", 11, "- Parent\n\n  - ", 14],
+  ["text\n  ", 5, "text\n\n-  ", 7],
+  ["text\nword", 5, "text\n- word", 7]
+]) {
+  const typed = before.slice(0, cursor) + "-" + before.slice(cursor)
+  assert.deepEqual(model.completeListMarker(typed, before, cursor + 1),
+    { changed: true, source: expected, cursor: expectedCursor })
+}
+pass("dash completion preserves adjacent lists, heading syntax, and line endings")
 equal(
   model.completeListMarker("text -", "text ", 6),
   { changed: false, source: "text -", cursor: 6 },
@@ -1313,6 +1327,11 @@ equal(
   { handled: true, source: "tt", cursor: 1 },
   "Backspace removes a selected source range"
 )
+for (const [cursor, start, end] of [[3, 3, 3], [2, 2, 2], [2, 1, 2], [3, 2, 3]]) {
+  assert.deepEqual(model.plainBackspace("a🙂b", cursor, start, end),
+    { handled: true, source: "ab", cursor: 1 })
+}
+pass("Backspace keeps UTF-16 surrogate pairs intact")
 equal(
   model.plainBackspace("text", 0, 0, 0),
   { handled: false, source: "text", cursor: 0 },
@@ -1584,5 +1603,22 @@ for (const prefix of ["- ", "* ", "1. ", "2) ", "- [ ] ", "- [x] ", "## ", "> ",
 }
 equal(model.formattingPrefixBackspace("```\n- \n```", 6, 6, 6).handled,
   false, "Backspace does not strip literal prefixes inside code");
+
+for (const [before, after, expected] of [
+  ["Alpha mispelled.\nBeta steady.", "Alpha misspelled.\nBeta steady.", [9, 9, 10]],
+  ["Alpha added prose.", "Alpha prose.", [6, 12, 6]],
+  ["First\r\nSecond wurd\r\nThird", "First\r\nSecond word\r\nThird", [15, 16, 16]],
+  ["A 🙂 typo", "A 🙂 fixed typo", [5, 5, 11]]
+]) {
+  for (const prefixLength of [0, 255, 256, 257]) {
+    const prefix = "x".repeat(prefixLength)
+    const suffix = prefixLength ? "\nTail".repeat(103) : ""
+    const edit = model.sourceEditBounds(prefix + before + suffix,
+      prefix + after + suffix)
+    assert.deepEqual([edit.start, edit.oldEnd, edit.newEnd],
+      expected.map((offset) => offset + prefixLength))
+  }
+}
+pass("edit bounds preserve insertion and deletion offsets across shared text chunks")
 
 process.stdout.write("PASS: isolated editor model regressions passed\n")

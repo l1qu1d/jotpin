@@ -12,7 +12,7 @@ ShellRoot {
   QtObject {
     id: fakeShell
     property var barConfig: ({ position: "top" })
-    property var bar: null
+    property var bar: ({ barSize: Number(Quickshell.env("JOTPIN_TEST_BAR_SIZE")) })
     function firstPartyServiceFor(pluginId) { return null }
     function hide(pluginId) {}
   }
@@ -80,11 +80,7 @@ ShellRoot {
     running: true
     repeat: false
     onTriggered: {
-      // Keep this disposable harness deterministic and exercise the same
-      // 10px theme scale as the user's current Omarchy configuration.
-      Style.fontBaseSize = 10
-      Style.spacingScale = 1
-      Style.spacingScaleWithFont = true
+      // Let Omarchy load the fixture's 10px font setting before opening.
       padLoader.active = true
     }
   }

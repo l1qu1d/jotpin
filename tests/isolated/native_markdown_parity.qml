@@ -702,8 +702,7 @@ ShellRoot {
     if (currentCase().name === "quote-mouse-hit") {
       var quoteTableCount = html.split('class="jotpin-quote"').length - 1
       check(quoteTableCount === 1 &&
-          html.indexOf('rowspan="2"') >= 0 &&
-          html.indexOf('padding-top:JOTPIN_QUOTE_GAPpx') >= 0,
+          html.indexOf('rowspan="3"') >= 0,
         "nested quote does not share one flattened layout table: " +
           JSON.stringify({quoteTables: quoteTableCount, html: html}))
       var outerText = display.cursorRectangleForSource(
@@ -712,14 +711,15 @@ ShellRoot {
         source.indexOf("Swartz."))
       var nestedText = display.cursorRectangleForSource(
         source.indexOf("Markdown is often used"))
+      var emptyRow = display.cursorRectangleForSource(source.indexOf("\n>\n") + 2)
       check(validRect(outerText) && validRect(outerLastLine) &&
-          validRect(nestedText) &&
+          validRect(emptyRow) && validRect(nestedText) &&
           Number(nestedText.x) > Number(outerText.x) + 8 &&
-          Number(nestedText.y) > Number(outerLastLine.y) +
-            Number(outerLastLine.height) + 3,
-        "nested quote text is not indented and vertically separated " +
+          Number(emptyRow.y) > Number(outerLastLine.y) &&
+          Number(nestedText.y) > Number(emptyRow.y),
+        "nested quote text is not indented and below its editable blank row " +
           "from its parent: " +
-          JSON.stringify({outer: outerText, nested: nestedText}))
+          JSON.stringify({outer: outerText, blank: emptyRow, nested: nestedText}))
       var rails = Array.isArray(display.quoteRailRects)
         ? display.quoteRailRects.slice() : []
       rails.sort(function(left, right) {

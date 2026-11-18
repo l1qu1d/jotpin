@@ -61,7 +61,8 @@ try {
     fs.writeFileSync(path.join(temporary, 'JotPin.qml'), mutation.product ? modified : productSource);
     const runner = mutation.product ? 'jotpin_link_keys_regression.sh' : 'native_markdown_mouse_regression.sh';
     const result = spawnSync('bash', [path.join(temporary, 'tests', runner)],
-      {encoding: 'utf8', timeout: 40000, maxBuffer: 4 * 1024 * 1024});
+      {encoding: 'utf8', timeout: mutation.product ? 75000 : 40000,
+        maxBuffer: 4 * 1024 * 1024});
     const output = String(result.stdout || '') + String(result.stderr || '');
     assert.equal(result.error, undefined, `mutation process error: ${mutation.name}`);
     assert.notEqual(result.status, 0, `tests accepted broken behavior: ${mutation.name}`);

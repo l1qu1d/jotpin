@@ -452,7 +452,8 @@ Item {
     if (previousLabel.length > 0)
       nativeDocument.remove(documentStart,
         documentStart + previousLabel.length)
-    if (nextLabel.length > 0) nativeDocument.insert(documentStart, nextLabel)
+    if (nextLabel.length > 0)
+      nativeDocument.insert(documentStart, escapeHtml(nextLabel))
     if (nextLabel.length > 0) {
       nativeDocument.select(documentStart, documentStart + nextLabel.length)
       var nextFont = nativeDocument.cursorSelection.font
@@ -540,20 +541,32 @@ Item {
         previousSource === nextSource || sourceToDocument.length === 0)
       return false
 
-    var prefix = 0
-    var prefixLimit = Math.min(previousSource.length, nextSource.length)
-    while (prefix < prefixLimit &&
-        previousSource.charAt(prefix) === nextSource.charAt(prefix)) prefix++
-    var suffix = 0
-    while (suffix < previousSource.length - prefix &&
-        suffix < nextSource.length - prefix &&
-        previousSource.charAt(previousSource.length - 1 - suffix) ===
-          nextSource.charAt(nextSource.length - 1 - suffix)) suffix++
-
-    var previousEnd = previousSource.length - suffix
-    var nextEnd = nextSource.length - suffix
+    var edit = EditorModel.sourceEditBounds(previousSource, nextSource)
+    var prefix = edit.start
+    var previousEnd = edit.oldEnd
+    var nextEnd = edit.newEnd
     var removed = previousSource.slice(prefix, previousEnd)
     var inserted = nextSource.slice(prefix, nextEnd)
+    var previousCharacter = previousSource.charAt(prefix - 1)
+    if ((previousCharacter === "#" && /^[ \t]/.test(inserted)) ||
+        (previousCharacter === ">" && /^[^>\r\n]/.test(inserted))) {
+      var markerLine = EditorModel.lineBounds(previousSource, prefix)
+      if (prefix === markerLine.lineStart + markerLine.line.length &&
+          /^ {0,3}(?:#{1,6}|>+)$/.test(markerLine.line)) {
+        // These glyphs were visible while the line held only a marker. A
+        // structural repaint replaces them when entering a heading or quote.
+        immediateParseRequested = true
+        return false
+      }
+    }
+    if (!removed && /^\n+$/.test(inserted)) {
+      // Equal newline runs make the insertion offset ambiguous. Place an
+      // added break before the existing run, including a fence's hidden
+      // closing newline, so the new row gets the first new caret position.
+      while (prefix > 0 && previousSource.charAt(prefix - 1) === "\n") prefix--
+      previousEnd = prefix
+      nextEnd = prefix + inserted.length
+    }
     // Image width metadata is intentionally absent from the rich document.
     // This must cover later resizes that replace only the width digits, not
     // just the first resize that inserts the complete metadata comment.
@@ -569,7 +582,7 @@ Item {
     // transient code-body style or a caret jump to the following row.
     if (sourceRangeTouchesCodeFenceHeader(prefix, previousEnd)) {
       if (tryApplyOptimisticFenceLanguageEdit(previousSource, nextSource,
-            prefix, previousEnd, nextEnd, sourceToDocument.slice()))
+            prefix, previousEnd, nextEnd, sourceToDocument))
         return true
       immediateParseRequested = true
       return false
@@ -602,10 +615,12 @@ Item {
       /^(?:\r\n|\r|\n)+$/.test(removed)
     var insertedIsLineBreakRun = inserted === "" ||
       /^(?:\r\n|\r|\n)+$/.test(inserted)
-    if (touchesLineBreak &&
-        (!removedIsLineBreakRun || !insertedIsLineBreakRun)) return false
+    if (touchesLineBreak && (!removedIsLineBreakRun || !insertedIsLineBreakRun)) {
+      immediateParseRequested = true
+      return false
+    }
 
-    var oldSourceToDocument = sourceToDocument.slice()
+    var oldSourceToDocument = sourceToDocument
     var documentStart = Number(oldSourceToDocument[prefix])
     var documentEnd = Number(oldSourceToDocument[previousEnd])
     if (!isFinite(documentStart) || !isFinite(documentEnd) ||
@@ -698,8 +713,16 @@ Item {
         }
       }
     }
-    if (documentInserted.length > 0)
-      nativeDocument.insert(documentStart, documentInserted)
+    if (documentInserted.length > 0) {
+      // RichText insertion treats literal newlines as HTML whitespace. Use
+      // a break element for each projected newline so its document offset
+      // advances to the next visual row immediately.
+      var fragment = escapeHtml(documentInserted)
+      if (insertedDocumentOffsets) fragment = fragment.replace(/\n/g, "<br>")
+      else if (/[ \t]/.test(documentInserted))
+        fragment = '<span style="white-space: pre-wrap">' + fragment + "</span>"
+      nativeDocument.insert(documentStart, fragment)
+    }
     if (documentInserted.length > 0 &&
         !EditorModel.fencedCodeContext(previousSource, prefix)) {
       nativeDocument.select(documentStart, documentStart + documentInserted.length)
@@ -739,17 +762,11 @@ Item {
         Number(oldSourceToDocument[previousPosition]) + documentDelta
     }
 
-    sourceToDocument = nextSourceToDocument
     documentPlainText = nativeDocument.getText(0, nativeDocument.length)
-    documentToSource = new Array(nativeDocument.length + 1)
-    for (var sourcePosition = 0; sourcePosition <= nextSource.length;
-        sourcePosition++) {
-      var mappedDocumentPosition = Number(sourceToDocument[sourcePosition])
-      if (isFinite(mappedDocumentPosition) && mappedDocumentPosition >= 0 &&
-          mappedDocumentPosition <= nativeDocument.length)
-        documentToSource[mappedDocumentPosition] = sourcePosition
-    }
-    fillNearestMappings(documentToSource, nativeDocument.length, 0)
+    sourceToDocument = nextSourceToDocument
+    // Typing only needs source-to-document geometry. Rebuild the reverse
+    // map when hit testing or viewport geometry actually reads it.
+    documentToSource = []
     documentSourceText = nextSource
     tableSourceRegions = EditorModel.tableRegions(nextSource)
     settledRequestId = parseRequestId
@@ -1246,11 +1263,19 @@ Item {
       for (var childIndex = 0; childIndex < children.length; childIndex++)
         collectLeafSegments(children[childIndex], result, leafInsideTable,
           currentImageState)
+      if ((type === "link" || type === "linkReference" || type === "heading" ||
+          type === "emphasis" || type === "strong" || type === "delete") &&
+          node.position) {
+        var last = children[children.length - 1].position
+        if (last && last.end.offset < node.position.end.offset)
+          result.push({type: "hiddenTail", start: last.end.offset,
+            end: node.position.end.offset})
+      }
       return
     }
     if (!node.position || !node.position.start || !node.position.end) return
     if (type === "text" || type === "inlineCode" || type === "code" ||
-        type === "blank") {
+        type === "blank" || type === "placeholder" || type === "thematicBreak") {
       result.push({
         type: type,
         value: String(node.value || ""),
@@ -1272,11 +1297,17 @@ Item {
 
   function mapRun(documentStart, sourceStart, length) {
     var count = Math.max(0, Number(length) || 0)
+    var documentMap = documentToSource
+    var sourceMap = sourceToDocument
+    // The maps are sized once per rebuild. Use their bounds for this run so
+    // each character lookup stays in JavaScript.
+    var documentEnd = documentMap.length - 1
+    var sourceEnd = sourceMap.length - 1
     for (var offset = 0; offset <= count; offset++) {
-      var documentPosition = clampDocumentPosition(documentStart + offset)
-      var sourcePosition = clampSourcePosition(sourceStart + offset)
-      documentToSource[documentPosition] = sourcePosition
-      sourceToDocument[sourcePosition] = documentPosition
+      var documentPosition = Math.max(0, Math.min(documentStart + offset, documentEnd))
+      var sourcePosition = Math.max(0, Math.min(sourceStart + offset, sourceEnd))
+      documentMap[documentPosition] = sourcePosition
+      sourceMap[sourcePosition] = documentPosition
     }
   }
 
@@ -1391,39 +1422,71 @@ Item {
       .replace(/\u00a0/g, " ")
   }
 
-  function exactSegmentDocumentPosition(segment, documentStart) {
+  function exactSegmentDocumentPosition(segment, documentStart, layoutText) {
     if (!segment) return -1
     var value = String(segment.value || "")
     if (!value) return -1
     var start = Math.max(0, Number(documentStart) || 0)
     return segment.type === "code"
-      ? normalizedDocumentText(documentPlainText).indexOf(value, start)
-      : documentPlainText.indexOf(value, start)
+      ? normalizedDocumentText(layoutText).indexOf(value, start)
+      : layoutText.indexOf(value, start)
   }
 
-  function firstSegmentDocumentPosition(segment, documentStart) {
-    var exact = exactSegmentDocumentPosition(segment, documentStart)
+  function firstSegmentDocumentPosition(segment, documentStart, layoutText) {
+    var exact = exactSegmentDocumentPosition(segment, documentStart, layoutText)
     if (exact >= 0) return exact
     var match = /\S+/.exec(String(segment && segment.value || ""))
-    return match ? documentPlainText.indexOf(
+    return match ? layoutText.indexOf(
       String(match[0] || ""), Math.max(0, Number(documentStart) || 0)) : -1
   }
 
-  function mapLeafSegment(segment, searchState) {
+  function mapLeafSegment(segment, searchState, layoutSource, layoutText) {
     var value = String(segment.value || "")
     var sourceStart = clampSourcePosition(segment.start)
     var sourceEnd = clampSourcePosition(segment.end)
-    var sourceSlice = sourceText.slice(sourceStart, sourceEnd)
+    var sourceSlice = layoutSource.slice(sourceStart, sourceEnd)
     var valueOffset = sourceSlice.indexOf(value)
     var contentSourceStart = valueOffset >= 0
       ? sourceStart + valueOffset : sourceStart
+    var sourceMap = sourceToDocument
+
+    if (segment.type === "hiddenTail") {
+      var endPosition = sourceMap[sourceStart]
+      if (endPosition !== undefined)
+        for (var offset = sourceStart + 1; offset <= sourceEnd; offset++)
+          sourceMap[offset] = endPosition
+      return
+    }
+    if (segment.type === "placeholder" || segment.type === "blank") {
+      var slot = layoutText.indexOf(value, searchState.document)
+      if (slot >= 0) {
+        mapProjectedRun(slot, 0, sourceStart, sourceEnd - sourceStart)
+        if (segment.type === "placeholder") documentToSource[slot] = sourceEnd
+        searchState.document = slot + 1
+      }
+      return
+    }
+    if (segment.type === "thematicBreak") {
+      var previous = searchState.document
+      while (layoutText.charAt(previous) === "\ufdd1") previous++
+      var separator = layoutText.indexOf("\u2029", previous)
+      // QTextDocument represents an HR as an empty block. Its first caret
+      // position follows the preceding paragraph's separator.
+      var rule = searchState.document === 0 && !searchState.leadingRule
+        ? 0 : separator >= 0 ? separator + 1 : previous
+      mapProjectedRun(rule, 0, sourceStart, sourceEnd - sourceStart)
+      documentToSource[rule] = sourceEnd
+      searchState.document = rule
+      searchState.leadingRule = true
+      return
+    }
 
     if (segment.type === "image") {
       var imageIndex = Math.max(0, Number(segment.imageIndex) || 0)
       var imageState = imageLoadStateAt(imageIndex)
       var caption = String(segment.value || "")
       if (imageState === "ready") {
-        var imageDocumentPosition = documentPlainText.indexOf(
+        var imageDocumentPosition = layoutText.indexOf(
           "\ufffc", searchState.document)
         if (imageDocumentPosition >= 0) {
           mapProjectedRun(imageDocumentPosition, 1,
@@ -1433,7 +1496,7 @@ Item {
       } else {
         var fallback = imageFallbackText(imageIndex, imageState)
         var fallbackPosition = fallback
-          ? documentPlainText.indexOf(fallback, searchState.document) : -1
+          ? layoutText.indexOf(fallback, searchState.document) : -1
         if (fallbackPosition >= 0) {
           mapProjectedRun(fallbackPosition, fallback.length,
             sourceStart, sourceEnd - sourceStart)
@@ -1441,7 +1504,7 @@ Item {
         }
       }
       var captionPosition = caption
-        ? documentPlainText.indexOf(caption, searchState.document) : -1
+        ? layoutText.indexOf(caption, searchState.document) : -1
       if (captionPosition >= 0) {
         var captionSourceOffset = sourceSlice.indexOf(caption)
         var captionSourceStart = captionSourceOffset >= 0
@@ -1462,7 +1525,7 @@ Item {
     // every source column in a fence remains directly editable.
     if (segment.type === "code" && valueOffset >= 0) {
       var codeDocumentPosition = normalizedDocumentText(
-        documentPlainText).indexOf(value, searchState.document)
+        layoutText).indexOf(value, searchState.document)
       if (codeDocumentPosition >= 0) {
         mapRun(codeDocumentPosition, contentSourceStart, value.length)
         searchState.document = codeDocumentPosition + value.length
@@ -1473,30 +1536,43 @@ Item {
     var expression = /\S+/g
     var match
     var sourceSearch = Math.max(0, contentSourceStart - sourceStart)
+    var lastDocumentEnd = -1
     while ((match = expression.exec(value)) !== null) {
       var token = String(match[0] || "")
       if (!token) continue
-      var documentPosition = documentPlainText.indexOf(token,
+      var documentPosition = layoutText.indexOf(token,
         searchState.document)
-      if (documentPosition < 0) continue
+      if (documentPosition < 0) {
+        lastDocumentEnd = -1
+        continue
+      }
       var localSourcePosition = sourceSlice.indexOf(token, sourceSearch)
       var tokenSourceStart = localSourcePosition >= 0
         ? sourceStart + localSourcePosition
         : Math.min(sourceEnd, contentSourceStart + Number(match.index))
       mapRun(documentPosition, tokenSourceStart, token.length)
       searchState.document = documentPosition + token.length
+      lastDocumentEnd = searchState.document
       sourceSearch = Math.max(sourceSearch,
         tokenSourceStart - sourceStart + token.length)
+    }
+    // An entity or closing inline-code delimiter can extend beyond the
+    // last painted character. Keep that tail at the end of its own row.
+    if (lastDocumentEnd >= 0 && sourceSearch < sourceSlice.length &&
+        (segment.type === "text" || segment.type === "inlineCode") &&
+        !/[\r\n]/.test(sourceSlice.slice(sourceSearch))) {
+      for (var tail = sourceStart + sourceSearch + 1; tail <= sourceEnd; tail++)
+        sourceMap[tail] = lastDocumentEnd
     }
   }
 
   function fillNearestMappings(map, maximum, fallback) {
     var next = new Array(maximum + 1)
-    var nextValue = -1
+    var followingIndex = -1
     for (var reverse = maximum; reverse >= 0; reverse--) {
       if (map[reverse] !== undefined && Number(map[reverse]) >= 0)
-        nextValue = Number(map[reverse])
-      next[reverse] = nextValue
+        followingIndex = reverse
+      next[reverse] = followingIndex
     }
     var previousValue = -1
     var previousIndex = -1
@@ -1506,28 +1582,27 @@ Item {
         previousIndex = index
         continue
       }
-      var followingValue = next[index]
+      followingIndex = next[index]
+      var followingValue = followingIndex >= 0
+        ? Number(map[followingIndex]) : -1
       if (previousValue < 0) map[index] = followingValue >= 0
         ? followingValue : fallback
       else if (followingValue < 0) map[index] = previousValue
-      else {
-        var followingIndex = index
-        while (followingIndex <= maximum &&
-            (map[followingIndex] === undefined ||
-             Number(map[followingIndex]) < 0)) followingIndex++
-        map[index] = index - previousIndex <= followingIndex - index
-          ? previousValue : followingValue
-      }
+      else map[index] = index - previousIndex <= followingIndex - index
+        ? previousValue : followingValue
     }
   }
 
   function rebuildMappings(requestId) {
     if (requestId !== parseRequestId || !syntaxTree) return
-    documentPlainText = nativeDocument.getText(0, nativeDocument.length)
-    documentSourceText = String(sourceText || "")
-    tableSourceRegions = EditorModel.tableRegions(sourceText)
-    sourceToDocument = new Array(sourceText.length + 1)
-    documentToSource = new Array(nativeDocument.length + 1)
+    var layoutSource = String(sourceText || "")
+    var documentLength = nativeDocument.length
+    var layoutText = nativeDocument.getText(0, documentLength)
+    documentPlainText = layoutText
+    documentSourceText = layoutSource
+    tableSourceRegions = EditorModel.tableRegions(layoutSource)
+    sourceToDocument = new Array(layoutSource.length + 1)
+    documentToSource = new Array(documentLength + 1)
     var segments = []
     collectLeafSegments(syntaxTree, segments, false, {index: 0})
     inlineCodeSourceRanges = segments.filter(function(segment) {
@@ -1535,22 +1610,19 @@ Item {
     }).map(function(segment) { return {start: segment.start, end: segment.end} })
     var searchState = {document: 0}
     for (var segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
-      var nextSegment = segmentIndex + 1 < segments.length
-        ? segments[segmentIndex + 1] : null
-      var documentBoundary = exactSegmentDocumentPosition(
-        nextSegment, searchState.document)
       var segment = segments[segmentIndex]
-      var segmentCandidate = firstSegmentDocumentPosition(
-        segment, searchState.document)
-      // GFM can discard surplus table cells. Do not let a token from one of
-      // those omitted cells jump forward to a later occurrence and move the
-      // search cursor past every intervening block.
-      if (segment.insideTable && nextSegment && documentBoundary >= 0 &&
-          segmentCandidate >= 0 &&
-          segmentCandidate > documentBoundary &&
-          String(segment.value || "") !== String(nextSegment.value || ""))
-        continue
-      mapLeafSegment(segment, searchState)
+      // GFM can discard surplus table cells. Keep their tokens from jumping
+      // past the next segment to a later occurrence in the document.
+      if (segment.insideTable && segmentIndex + 1 < segments.length) {
+        var nextSegment = segments[segmentIndex + 1]
+        var documentBoundary = exactSegmentDocumentPosition(
+          nextSegment, searchState.document, layoutText)
+        if (documentBoundary >= 0 && segment.value !== nextSegment.value &&
+            firstSegmentDocumentPosition(segment, searchState.document,
+              layoutText) > documentBoundary)
+          continue
+      }
+      mapLeafSegment(segment, searchState, layoutSource, layoutText)
     }
     mapCodeLanguageLabels()
     mapEmptyListItems()
@@ -1818,6 +1890,19 @@ Item {
 
   function sourcePositionForDocument(documentPosition) {
     if (!layoutMatchesCurrentInput()) return 0
+    if (documentToSource.length === 0) {
+      var documentLength = nativeDocument.length
+      var sourceMap = sourceToDocument
+      var reverseMap = new Array(documentLength + 1)
+      for (var sourcePosition = 0; sourcePosition < sourceMap.length;
+          sourcePosition++) {
+        var mapped = Number(sourceMap[sourcePosition])
+        if (isFinite(mapped) && mapped >= 0 && mapped <= documentLength)
+          reverseMap[mapped] = sourcePosition
+      }
+      fillNearestMappings(reverseMap, documentLength, 0)
+      documentToSource = reverseMap
+    }
     var position = clampDocumentPosition(documentPosition)
     return clampSourcePosition(documentToSource[position])
   }
@@ -1862,9 +1947,9 @@ Item {
     while (regionLow <= regionHigh) {
       var regionIndex = Math.floor((regionLow + regionHigh) / 2)
       var candidateRegion = regions[regionIndex] || {}
-      if (position <= Number(candidateRegion.sourceStart)) {
+      if (position < Number(candidateRegion.sourceStart)) {
         regionHigh = regionIndex - 1
-      } else if (position >= Number(candidateRegion.sourceEnd)) {
+      } else if (position > Number(candidateRegion.sourceEnd)) {
         regionLow = regionIndex + 1
       } else {
         region = candidateRegion
@@ -1905,7 +1990,13 @@ Item {
     var anchors = []
     for (var spanIndex = 0; spanIndex < spans.length; spanIndex++) {
       var bounds = tableCellVisibleBounds(spans[spanIndex])
-      if (bounds.end <= bounds.start) continue
+      if (bounds.end <= bounds.start) {
+        var emptyPosition = clampSourcePosition(spans[spanIndex].start)
+        var emptyRectangle = rawCursorRectangleForSource(emptyPosition)
+        if (emptyRectangle)
+          anchors.push({source: emptyPosition, rectangle: emptyRectangle})
+        continue
+      }
       if (position >= bounds.start && position <= bounds.end) return null
       var startRectangle = rawCursorRectangleForSource(bounds.start)
       var endRectangle = rawCursorRectangleForSource(bounds.end)
@@ -1973,9 +2064,12 @@ Item {
     var tableRectangle = tableCursorRectangleForSource(position)
     if (tableRectangle) return tableRectangle
     var whitespace = trailingWhitespaceRun(position)
-    if (!whitespace) return rawCursorRectangleForSource(position)
+    var mapped = rawCursorRectangleForSource(position)
+    if (!whitespace || whitespace.start === position) return mapped
     var base = rawCursorRectangleForSource(whitespace.start)
-    if (!base) return null
+    // Hidden Markdown prefixes and indentation can map the start of a
+    // whitespace run to the previous visual row.
+    if (!base || (mapped && Number(mapped.y) !== Number(base.y))) return mapped
     return Qt.rect(Number(base.x) + whitespaceAdvance(
         whitespace.start, position), Number(base.y), Number(base.width),
       Number(base.height))
@@ -2031,6 +2125,7 @@ Item {
         collectQuotes(children[index], depth)
     }
     collectQuotes(syntaxTree, 0)
+    if (quoteModels.length === 0 && quoteRailRects.length === 0) return
 
     var visibleSourceStart = 0
     var visibleSourceEnd = sourceText.length
@@ -3095,8 +3190,10 @@ Item {
 
   onSourceTextChanged: requestLayout()
   onCursorPositionChanged: {
+    // Qt can advance its cursor before publishing the edited text. The
+    // editor defers cursor-only moves until both notifications have run.
+    // Source layout changes still publish matching geometry immediately.
     layoutCursorPosition = clampSourcePosition(cursorPosition)
-    if (layoutReady) layoutUpdated()
   }
   onSelectionStartChanged: selectionGeometryTimer.restart()
   onSelectionEndChanged: selectionGeometryTimer.restart()

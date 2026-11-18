@@ -201,31 +201,6 @@ function rangeAtPosition(rangesValue, positionValue) {
 // another.  The returned offsets are suitable for the editor/WorkerScript
 // patch protocol and preserve CRLF bytes because only matching prefix/suffix
 // characters are skipped.
-function deriveSpellcheckEdit(previousSourceValue, nextSourceValue) {
-  var previousSource = String(previousSourceValue || "")
-  var nextSource = String(nextSourceValue || "")
-  var prefix = 0
-  var prefixLimit = Math.min(previousSource.length, nextSource.length)
-  while (prefix < prefixLimit &&
-      previousSource.charAt(prefix) === nextSource.charAt(prefix)) prefix++
-
-  var suffix = 0
-  var previousRemaining = previousSource.length - prefix
-  var nextRemaining = nextSource.length - prefix
-  while (suffix < previousRemaining && suffix < nextRemaining &&
-      previousSource.charAt(previousSource.length - 1 - suffix) ===
-        nextSource.charAt(nextSource.length - 1 - suffix)) suffix++
-
-  return {
-    start: prefix,
-    deletedLength: previousSource.length - prefix - suffix,
-    insertedText: nextSource.slice(prefix, nextSource.length - suffix),
-    oldEnd: previousSource.length - suffix,
-    newEnd: nextSource.length - suffix,
-    delta: nextSource.length - previousSource.length
-  }
-}
-
 if (typeof module !== "undefined") module.exports = {
   excludedMarkdownRanges: excludedMarkdownRanges,
   spellingCandidates: spellingCandidates,
@@ -233,6 +208,5 @@ if (typeof module !== "undefined") module.exports = {
   validatedMisspellings: validatedMisspellings,
   candidateSequencesEqual: candidateSequencesEqual,
   rebaseMisspellings: rebaseMisspellings,
-  rangeAtPosition: rangeAtPosition,
-  deriveSpellcheckEdit: deriveSpellcheckEdit
+  rangeAtPosition: rangeAtPosition
 }

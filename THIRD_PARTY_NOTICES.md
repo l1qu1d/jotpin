@@ -44,10 +44,10 @@ readable plain code.
 
 ## Bundled Markdown parser
 
-JotPin's generated Markdown worker includes micromark 4.0.2,
-micromark-extension-gfm 3.0.0, mdast-util-from-markdown 2.0.3,
-mdast-util-gfm 3.1.0, mdast-util-to-hast 13.2.1,
-hast-util-sanitize 5.0.2, and hast-util-to-html 9.0.5 with their
+JotPin's generated Markdown worker includes micromark 4.0.3,
+micromark-extension-gfm 3.0.0, mdast-util-from-markdown 2.1.0,
+mdast-util-gfm 3.1.0, mdast-util-to-hast 13.2.2,
+hast-util-sanitize 5.0.2, and hast-util-to-html 9.0.6 with their
 unified/syntax-tree utility dependencies. The worker parses locally, sanitizes
 the generated structural HTML, and sends it with a compact, source-positioned
 syntax tree to QML; it does not contact a network service.
@@ -65,4 +65,5 @@ node scripts/build_vendor_bundles.mjs
 node scripts/build_markdown_bundle.mjs
 ```
 
-Neither npm nor these build dependencies are used at JotPin runtime.
+All three workers are bundled with esbuild. JotPin runs them offline in
+Quickshell without npm or a build tool.

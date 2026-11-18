@@ -174,7 +174,7 @@ fi
 for file in manifest.json EditorModel.js HtmlEntities.js SpellcheckModel.js \
     SyntaxHighlight.js JotPin.qml JotPinButton.qml HostIntegration.qml \
     NativeMarkdownDisplay.qml README.md PORTING.md LICENSE \
-    THIRD_PARTY_NOTICES.md welcome.md assets/jotpin-icon.png \
+    THIRD_PARTY_NOTICES.md welcome.md assets/jotpin-icon.png hypr/jotpin.lua \
     markdown/MarkdownParserWorker.js spellcheck/SpellcheckWorker.mjs \
     spellcheck/DictionaryPart1.mjs spellcheck/DictionaryPart2.mjs \
     syntax/HighlightWorker.js \
@@ -256,6 +256,7 @@ fi
 
 mkdir -m 700 -p -- "$INSTALL_DIR"
 mkdir -m 700 -p -- "$INSTALL_DIR/assets"
+mkdir -m 700 -p -- "$INSTALL_DIR/hypr"
 mkdir -m 700 -p -- "$INSTALL_DIR/markdown"
 mkdir -m 700 -p -- "$INSTALL_DIR/spellcheck"
 mkdir -m 700 -p -- "$INSTALL_DIR/syntax"
@@ -277,6 +278,7 @@ cp -- \
   "$ROOT_DIR/welcome.md" \
   "$INSTALL_DIR/"
 cp -- "$ROOT_DIR/assets/jotpin-icon.png" "$INSTALL_DIR/assets/"
+cp -- "$ROOT_DIR/hypr/jotpin.lua" "$INSTALL_DIR/hypr/"
 cp -- "$ROOT_DIR/markdown/MarkdownParserWorker.js" "$INSTALL_DIR/markdown/"
 cp -- "$ROOT_DIR/spellcheck/SpellcheckWorker.mjs" "$ROOT_DIR/spellcheck/DictionaryPart1.mjs" "$ROOT_DIR/spellcheck/DictionaryPart2.mjs" "$INSTALL_DIR/spellcheck/"
 # Retire the former monolithic worker after the backed-up upgrade.

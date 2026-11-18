@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+- Keep Side and Window presentations floating with bundled Hyprland rules.
+- Wrap file tabs and improve horizontal wheel scrolling and scrollbar dragging.
+- Keep the Live Preview caret on the intended row during typing, Enter,
+  Backspace, and Markdown layout changes.
+- Preserve literal Markdown markers while typing, align empty quote and table
+  rows, and make empty checklist items clickable.
+- Reduce editing latency and preserve complete emoji during Backspace.
+- Refresh bundled Markdown dependencies and add editor and packaging regressions.
+
 ## [1.0.0] - 2026-09-05
 
 - Initial release of JotPin, an on-demand Markdown scratchpad for Omarchy.
