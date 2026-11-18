@@ -11,14 +11,16 @@ Run commands from the repository root.
 ## Desktop integration options
 
 Omarchy's standard `plugin add --enable` installs and enables JotPin. It does not run
-this repository's installer or add desktop configuration. The guarded installer
+this repository's installer or add desktop configuration. JotPin loads the
+bundled floating-window rules into the running compositor before showing a
+window. The guarded installer
 copies a tested checkout into the installed plugin directory. It is also the
 route for installing optional desktop integration.
 
 With `JOTPIN_ALLOW_CONFIG_CHANGES=1`, the guarded installer adds:
 
-- JotPin-specific floating-window rules in `~/.config/hypr/jotpin.lua`, loaded
-  from `~/.config/hypr/hyprland.lua`.
+- A persistent copy of JotPin's floating-window rules in `~/.config/hypr/jotpin.lua`,
+  loaded from `~/.config/hypr/hyprland.lua`.
 - A desktop entry and icon for the Apps list, plus a Personal > JotPin menu row.
 - A workspace-aware `SUPER + N` shortcut when that binding is provably free.
   Existing or unverifiable bindings are left untouched.

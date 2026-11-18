@@ -23,7 +23,7 @@ function compactPosition(position) {
 
 function compactNode(node) {
   const result = {
-    type: String(node.type || ""),
+    type: node.previewPlaceholder ? "placeholder" : String(node.type || ""),
     position: compactPosition(node.position)
   }
   if (typeof node.value === "string") result.value = node.value
@@ -74,7 +74,7 @@ function blankRowsForGap(source, startValue, endValue, mode) {
     Number(endValue) || 0))
   let cursor = start
   if (mode === "leading" && source.indexOf("\n", cursor) >= end) return []
-  if (mode !== "leading") {
+  if (mode !== "leading" && mode !== "whole-document") {
     const firstNewline = source.indexOf("\n", cursor)
     if (firstNewline < 0 || firstNewline >= end) return []
     cursor = firstNewline + 1
@@ -90,7 +90,7 @@ function blankRowsForGap(source, startValue, endValue, mode) {
       cursor = newline + 1
     }
   }
-  if (mode === "trailing" && end > start &&
+  if ((mode === "trailing" || mode === "whole-document") && end > start &&
       source.charAt(end - 1) === "\n") rows.push({start: end, end})
   return rows
 }
@@ -106,10 +106,9 @@ function blankNode(row, lineStarts) {
   }
 }
 
-function compactTreeWithBlankRows(tree, source) {
+function compactTreeWithBlankRows(tree, source, lineStarts) {
   const compact = compactNode(tree)
   const children = Array.isArray(tree.children) ? tree.children : []
-  const lineStarts = lineStartsForSource(source)
   const result = []
   let previousEnd = 0
   let positionedChildren = 0
@@ -136,7 +135,8 @@ function compactTreeWithBlankRows(tree, source) {
     positionedChildren++
   }
   for (const row of blankRowsForGap(
-      source, previousEnd, source.length, "trailing"))
+      source, previousEnd, source.length,
+      positionedChildren ? "trailing" : "whole-document"))
     result.push(blankNode(row, lineStarts))
   compact.children = result
   return compact
@@ -195,7 +195,8 @@ function injectBlankRows(tree, source) {
     positionedChildren++
   }
   for (const row of blankRowsForGap(
-      source, previousEnd, source.length, "trailing"))
+      source, previousEnd, source.length,
+      positionedChildren ? "trailing" : "whole-document"))
     result.push(blankElement(row))
   tree.children = result
   return tree
@@ -637,6 +638,81 @@ function qtHtmlTree(tree, source) {
   return {tree, codeBlocks}
 }
 
+function placeholder(position) {
+  return {type: "text", value: "\u2062", position, previewPlaceholder: true}
+}
+
+function addBlankQuoteRows(node, children, source, lineStarts) {
+  const rows = []
+  let line = node.position.start.line
+  function addRowsBefore(nextLine) {
+    for (; line < nextLine; line++) {
+      const rowStart = lineStarts[line - 1]
+      const nextStart = lineStarts[line]
+      const end = Math.min(node.position.end.offset,
+        nextStart === undefined ? source.length : nextStart - 1)
+      const contentEnd = source.charAt(end - 1) === "\r" ? end - 1 : end
+      const start = Math.max(rowStart, node.position.start.offset)
+      if (!/^(?:[ \t]*>)+[ \t]*$/.test(source.slice(start, contentEnd))) continue
+      // A nested empty quote's anchor covers its outer marker columns too.
+      const prefix = source.slice(rowStart, start)
+      const position = {
+        start: sourcePoint(/^[ \t>]*$/.test(prefix) ? rowStart : start, lineStarts),
+        end: sourcePoint(contentEnd, lineStarts)
+      }
+      rows.push({type: "paragraph", position, children: [placeholder(position)]})
+    }
+  }
+  for (const child of children) {
+    addRowsBefore(child.position.start.line)
+    rows.push(child)
+    line = child.position.end.line + 1
+  }
+  addRowsBefore(node.position.end.line + 1)
+  node.children = rows
+}
+
+function prepareEditableMarkers(node, source, lineStarts) {
+  const children = Array.isArray(node.children) ? node.children : []
+  const emptyHeading = node.type === "heading" && children.length === 0
+  const quote = node.type === "blockquote"
+  const emptyList = node.type === "list" && children.length === 1 &&
+    children[0].children.length === 0
+  const position = node.position
+  if ((emptyHeading || quote || emptyList) && position &&
+      position.start.line === position.end.line) {
+    const value = source.slice(position.start.offset, position.end.offset)
+    // Bare punctuation can be literal text or the start of syntax. Keep
+    // the actual glyphs and their source positions until the syntax has a
+    // separator or content. The dash shortcut already supplies a separator.
+    const literal = emptyHeading ? /^#{1,6}$/.test(value) :
+      quote ? /^>+$/.test(value) : /^(?:[+*]|\d{1,9}[.)])$/.test(value)
+    if (literal) {
+      node.type = "paragraph"
+      delete node.depth
+      delete node.ordered
+      delete node.start
+      delete node.spread
+      node.children = [{type: "text", value, position}]
+      return
+    }
+  }
+  for (const child of children) prepareEditableMarkers(child, source, lineStarts)
+  if (quote) addBlankQuoteRows(node, children, source, lineStarts)
+  else if (emptyHeading || node.type === "tableCell" && children.length === 0)
+    node.children = [placeholder(position)]
+  else if (node.type === "listItem" && children.length === 1 &&
+      children[0].type === "paragraph" && children[0].children.length === 1) {
+    const content = children[0].children[0]
+    const text = source.slice(content.position.start.offset, position.end.offset)
+    const task = /^\[([ xX])\][ \t]+$/.exec(text)
+    if (content.type === "text" && task) {
+      node.checked = task[1] !== " "
+      children[0].children = [placeholder(position)]
+    }
+  }
+}
+
 export function render(sourceValue) {
   const source = String(sourceValue || "")
   const gfmMdastExtensions = gfmFromMarkdown()
@@ -649,6 +725,8 @@ export function render(sourceValue) {
     extensions: [gfm()],
     mdastExtensions: [gfmMdastExtensions]
   })
+  const lineStarts = lineStartsForSource(source)
+  prepareEditableMarkers(mdast, source, lineStarts)
   const images = []
   collectImageMetadata(mdast, images)
   preserveRawHtmlAsText(mdast)
@@ -663,7 +741,7 @@ export function render(sourceValue) {
   decorateStandaloneImages(safeHast)
   const qt = qtHtmlTree(safeHast, source)
   return {
-    tree: compactTreeWithBlankRows(mdast, source),
+    tree: compactTreeWithBlankRows(mdast, source, lineStarts),
     html: toHtml(qt.tree),
     codeBlocks: qt.codeBlocks,
     images

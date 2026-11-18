@@ -559,6 +559,627 @@ ShellRoot {
       compare(test.editor.selectionEnd, 6, "saving does not overwrite a newer selection end")
     }
 
+    function test_zzzzz_file_tabs_wrap_and_scroll() {
+      var surface = test.editor.Window.window.contentItem
+      var viewport = findChild(surface, "fileTabsViewport")
+      var rail = findChild(surface, "fileTabScrollRail")
+      var thumb = findChild(surface, "fileTabScrollThumb")
+      verify(viewport && rail && thumb, "the production file strip and scrollbar exist")
+      var originalFiles = test.pad.openFiles
+      var originalRows = test.pad.fileTabRows
+      var welcome = {path: test.pad.notePath}
+      var longTab = {path: "/tmp/sync-latency-test-" + "bigboss-".repeat(26) + ".md"}
+      var untitled = {path: "/tmp/untitled.md"}
+
+      try {
+        test.pad.setFileTabRows(2)
+        test.pad.openFiles = [welcome, longTab, untitled]
+        tryVerify(function() { return rail.visible }, 2000,
+          "a wide filename overflows the visible tab strip")
+        var first = findChild(viewport.contentItem, "fileTab_0")
+        var long = findChild(viewport.contentItem, "fileTab_1")
+        var third = findChild(viewport.contentItem, "fileTab_2")
+        verify(first && long && third, "all three tab delegates exist")
+        compare(third.y, first.y, "the short tabs share the first row")
+        verify(third.x >= first.x + first.width && third.x - first.x - first.width < 20,
+          "the next short tab sits directly after the first tab")
+        verify(long.y > first.y && long.x === 0, "the long tab starts the second row")
+
+        mouseWheel(viewport, 24, 8, 0, -120, Qt.NoButton)
+        tryVerify(function() { return viewport.contentX > 0 }, 1000,
+          "a regular mouse wheel scrolls the file strip sideways")
+        var afterVerticalWheel = viewport.contentX
+        mouseWheel(viewport, 24, 8, -120, 0, Qt.NoButton)
+        tryVerify(function() { return viewport.contentX > afterVerticalWheel }, 1000,
+          "horizontal wheel input also scrolls the file strip")
+        mouseWheel(viewport, 24, 8, 0, 120000, Qt.NoButton)
+        tryCompare(viewport, "contentX", 0, 1000, "scrolling clamps at the left edge")
+
+        verify(rail.height >= 12 && thumb.height >= 3, "the rail has a larger target and thumb")
+        var trackX = Math.floor((thumb.width + rail.width) / 2)
+        mousePress(rail, trackX, 1, Qt.LeftButton)
+        var afterTrackPress = viewport.contentX
+        verify(afterTrackPress > 0, "pressing the bare track in its padding scrolls")
+        mouseMove(rail, 10, 1, 20)
+        mouseRelease(rail, 10, 1, Qt.LeftButton)
+        verify(viewport.contentX < afterTrackPress, "the same track press continues as a drag")
+
+        var thumbX = Math.round(thumb.x + thumb.width / 2)
+        var beforeThumbDrag = viewport.contentX
+        mouseDrag(rail, thumbX, 1, Math.floor((rail.width - thumbX) / 2), 0, Qt.LeftButton)
+        verify(viewport.contentX > beforeThumbDrag, "the thumb drags from the padded hit area")
+
+        test.pad.setFileTabRows(1)
+        tryVerify(function() { return long.y === first.y && third.y === first.y }, 2000,
+          "the row preference still controls wrapping")
+        test.pad.openFiles = [welcome, untitled]
+        tryVerify(function() { return !rail.visible && viewport.contentX === 0 }, 2000,
+          "closing wide tabs hides the rail and returns the strip to the left")
+      } finally {
+        test.pad.openFiles = originalFiles
+        test.pad.setFileTabRows(originalRows)
+      }
+    }
+
+    function test_zzzzzz_enter_moves_live_caret_before_parse() {
+      var cases = [
+        {name: "end of prose", source: "Plain prose", position: 11, count: 2},
+        {name: "split prose", source: "Plain prose", position: 6, count: 1},
+        {name: "empty note", source: "", position: 0, count: 2},
+        {name: "end of fenced code", source: "```\ncode\n```", position: 8, count: 1}
+      ]
+      for (var i = 0; i < cases.length; i++) {
+        var spec = cases[i]
+        test.pad.setEditorText(spec.source)
+        tryVerify(function() {
+          return test.renderer.layoutMatchesCurrentInput() &&
+            !test.renderer.parsePending && !test.renderer.parseInFlight &&
+            test.renderer.pendingStyledReconcileRequestId < 0
+        }, 5000, spec.name + " settles before Enter")
+        test.pad.selectEditorRange(spec.position, spec.position)
+        test.editor.forceActiveFocus()
+        tryCompare(test.editor, "activeFocus", true, 2000)
+        var completedParses = test.renderer.parseCompletionCount
+        var immediate
+        for (var press = 0; press < spec.count; press++) {
+          var before = JSON.parse(test.pad.caretState())
+          keyPress(Qt.Key_Return)
+          immediate = JSON.parse(test.pad.caretState())
+          compare(test.editor.text, spec.source.slice(0, spec.position) +
+            "\n".repeat(press + 1) + spec.source.slice(spec.position),
+            spec.name + " inserts exactly one source newline per Enter")
+          compare(test.renderer.parseCompletionCount, completedParses,
+            spec.name + " does not need a worker reply to display Enter")
+          verify(immediate.layoutSourceMatches &&
+            immediate.renderedCursorY > before.renderedCursorY,
+            spec.name + " advances the caret vertically on the keypress")
+          compare(immediate.liveCursorY, immediate.renderedCursorY,
+            spec.name + " paints the caret on the new row immediately")
+          keyRelease(Qt.Key_Return)
+        }
+        tryVerify(function() {
+          return test.renderer.parseCompletionCount > completedParses &&
+            test.renderer.layoutMatchesCurrentInput() &&
+            !test.renderer.parsePending && !test.renderer.parseInFlight &&
+            test.renderer.pendingStyledReconcileRequestId < 0
+        }, 5000, spec.name + " settles after Enter")
+        var settled = JSON.parse(test.pad.caretState())
+        verify(Math.abs(settled.renderedCursorY - immediate.renderedCursorY) <= 1 &&
+          Math.abs(settled.renderedCursorX - immediate.renderedCursorX) <= 1,
+          spec.name + " keeps the caret in place when the worker catches up")
+      }
+    }
+
+    function settleLivePreview(source, position) {
+      test.pad.setEditorText(source)
+      test.pad.selectEditorRange(position, position)
+      test.editor.forceActiveFocus()
+      waitForLivePreview()
+    }
+
+    function waitForLivePreview() {
+      tryVerify(function() {
+        return test.renderer.layoutMatchesCurrentInput() &&
+          !test.renderer.parsePending && !test.renderer.parseInFlight &&
+          test.renderer.pendingStyledReconcileRequestId < 0 &&
+          test.renderer.codeHighlightPendingCount === 0
+      }, 5000, "the Live Preview fixture settles")
+    }
+
+    function test_zzzzzzz_backspace_to_empty_keeps_preview_row() {
+      var cases = [
+        {name: "paragraph", before: "First row\n\n", after: "\n\nLast row"},
+        {name: "heading", before: "First row\n\n# ", after: "\n\nLast row"},
+        {name: "indentation", before: "First row\n  ", after: "\nLast row"},
+        {name: "task", before: "- First row\n- [ ] ", after: "\n- Last row"},
+        {name: "code block", before: "```js\nFirst row\n", after: "\n```"}
+      ]
+      for (var spec of cases) {
+        var text = "abc"
+        settleLivePreview(spec.before + text + spec.after,
+          spec.before.length + text.length)
+        var initial = JSON.parse(test.pad.caretState())
+        verify(initial.liveCursorVisible && initial.renderedCursorY > 0)
+        var completedParses = test.renderer.parseCompletionCount
+        while (text.length > 0) {
+          keyPress(Qt.Key_Backspace)
+          text = text.slice(0, -1)
+          var caret = JSON.parse(test.pad.caretState())
+          compare(test.editor.text, spec.before + text + spec.after)
+          compare(caret.sourceLine, initial.sourceLine, spec.name)
+          compare(caret.renderedCursorY, initial.renderedCursorY, spec.name)
+          compare(caret.liveCursorY, initial.renderedCursorY, spec.name)
+          compare(test.renderer.parseCompletionCount, completedParses)
+          keyRelease(Qt.Key_Backspace)
+        }
+        tryVerify(function() {
+          return test.renderer.parseCompletionCount > completedParses &&
+            test.renderer.layoutMatchesCurrentInput() &&
+            test.renderer.pendingStyledReconcileRequestId < 0
+        }, 5000, spec.name + " settles after Backspace")
+        compare(JSON.parse(test.pad.caretState()).renderedCursorY,
+          initial.renderedCursorY, spec.name + " stays on the same row")
+      }
+    }
+
+    function test_zzzzzzzz_live_viewport_waits_for_structural_edit() {
+      var links = ("[Short label](https://example.com/" +
+        "abcdef".repeat(25) + ")\n\n").repeat(24)
+      settleLivePreview(links + "- \n\n" + links, links.length + 2)
+      var initial = JSON.parse(test.pad.caretState())
+      var scrollY = test.pad.setEditorScrollForTests(initial.renderedCursorY - 100)
+      verify(scrollY > 0 &&
+        initial.nativeCursorY > scrollY + test.renderer.viewportHeight,
+        "the raw and preview caret rows paint in different viewport regions")
+      keyPress(Qt.Key_Backspace)
+      compare(test.editor.text, links + "\n\n" + links)
+      verify(!test.renderer.layoutMatchesCurrentInput(),
+        "removing a projected list marker requires the worker")
+      keyRelease(Qt.Key_Backspace)
+      compare(test.renderer.viewportY, scrollY,
+        "the viewport stays on the rendered row while the worker runs")
+      tryVerify(function() {
+        return test.renderer.layoutMatchesCurrentInput() &&
+          !test.pad.liveCursorRevealPending
+      }, 5000, "the editor reveals the settled Live Preview caret")
+      var caret = JSON.parse(test.pad.caretState())
+      verify(caret.renderedCursorY >= test.renderer.viewportY &&
+        caret.renderedCursorY < test.renderer.viewportY + test.renderer.viewportHeight)
+    }
+
+    function test_zzzzzzzzz_optimistic_preview_preserves_literal_text() {
+      var before = "Above\n\nText"
+      var after = "\n\nBelow"
+      settleLivePreview(before + after, before.length)
+      var initial = JSON.parse(test.pad.caretState())
+      var completedParses = test.renderer.parseCompletionCount
+      var typed = ""
+      for (var character of ["<", "b", ">", "&"]) {
+        keyPress(character)
+        typed += character
+        compare(test.editor.text, before + typed + after)
+        verify(test.renderer.documentPlainText.indexOf("Text" + typed) >= 0,
+          "the typed character displays literally before parsing")
+        compare(JSON.parse(test.pad.caretState()).renderedCursorY,
+          initial.renderedCursorY)
+        keyRelease(character)
+      }
+      test.editor.insert(before.length + typed.length, "  more")
+      verify(test.renderer.documentPlainText.indexOf("Text" + typed + "  more") >= 0,
+        "the immediate preview shows both inserted spaces")
+      compare(test.renderer.parseCompletionCount, completedParses)
+    }
+
+    function test_zzzzzzzzzz_dash_below_prose_starts_a_bullet() {
+      var prose = "Ordinary text"
+      settleLivePreview(prose, prose.length)
+      keyClick(Qt.Key_Return)
+      keyClick("-")
+      var expected = prose + "\n\n- "
+      tryVerify(function() {
+        return test.renderer.layoutMatchesCurrentInput() &&
+          !test.renderer.parsePending && !test.renderer.parseInFlight &&
+          test.renderer.pendingStyledReconcileRequestId < 0
+      }, 5000, "preview settles after typing a dash")
+      compare(test.renderer.cursorTargetForSource(0).blockType, "paragraph",
+        "the dash keeps preceding text at body size")
+      compare(test.renderer.cursorTargetForSource(expected.length - 1).blockType,
+        "list", "the dash creates a separate list")
+      compare(test.editor.text, expected)
+      compare(test.editor.cursorPosition, expected.length)
+      verify(test.pad.undoEditorForTests(), "the dash can be undone")
+      compare(test.editor.text, prose + "\n",
+        "undo removes the dash and its generated separator together")
+      verify(test.pad.redoEditorForTests(), "the bullet can be restored")
+      compare(test.editor.text, expected)
+      test.editor.forceActiveFocus()
+      keyClick("x")
+      compare(test.editor.text, expected + "x",
+        "typing continues inside the new bullet")
+
+      var heading = "Intentional heading\n-"
+      settleLivePreview(heading, heading.length)
+      compare(test.renderer.cursorTargetForSource(0).blockType, "heading",
+        "a loaded Setext heading still renders normally")
+      compare(test.editor.text, heading)
+    }
+
+    function test_zzzzzzzzzzz_hashes_stay_visible_until_heading_separator() {
+      var before = "Above\n\n"
+      var after = "\n\nBelow"
+      settleLivePreview(before + after, before.length)
+      var hashes = ""
+      for (var count = 1; count <= 7; count++) {
+        keyClick("#")
+        hashes += "#"
+        compare(test.editor.text, before + hashes + after)
+        waitForLivePreview()
+        verify(test.renderer.documentPlainText.indexOf(hashes) >= 0,
+          "a paused " + hashes + " remains visible")
+        compare(test.renderer.cursorTargetForSource(before.length + 1).blockType,
+          "paragraph", "hashes alone keep body formatting")
+        var start = test.renderer.cursorRectangleForSource(before.length)
+        var end = test.renderer.cursorRectangleForSource(before.length + hashes.length)
+        verify(end.x > start.x && end.y === start.y, "the hashes have caret stops")
+      }
+      keyClick(Qt.Key_Backspace)
+      keyClick(Qt.Key_Backspace)
+      compare(test.editor.text, before + "#####" + after,
+        "Backspace removes one literal hash at a time")
+
+      settleLivePreview(before + "#" + after, before.length + 1)
+      for (var character of ["t", "a", "g"]) keyClick(character)
+      waitForLivePreview()
+      compare(test.editor.text, before + "#tag" + after)
+      verify(test.renderer.documentPlainText.indexOf("#tag") >= 0)
+      compare(test.renderer.cursorTargetForSource(before.length + 1).blockType, "paragraph")
+
+      settleLivePreview(before + "#" + after, before.length + 1)
+      keyClick(Qt.Key_Return)
+      waitForLivePreview()
+      compare(test.editor.text, before + "#\n" + after)
+      verify(test.renderer.documentPlainText.indexOf("#") >= 0,
+        "leaving the row keeps the literal hash visible")
+
+      settleLivePreview(before + "#" + after, before.length + 1)
+      keyClick(Qt.Key_Space)
+      waitForLivePreview()
+      compare(test.renderer.cursorTargetForSource(before.length + 1).blockType, "heading")
+      verify(test.renderer.documentPlainText.indexOf("#") === -1,
+        "the heading separator commits the formatting")
+      keyClick("T")
+      waitForLivePreview()
+      compare(test.editor.text, before + "# T" + after)
+      compare(test.renderer.cursorTargetForSource(before.length + 1).blockType, "heading")
+      verify(test.renderer.documentPlainText.indexOf("T") >= 0)
+    }
+
+    function test_zzzzzzzzzzzz_other_standalone_markers_remain_editable() {
+      var before = "Above\n\n"
+      var after = "\n\nBelow"
+      var cases = [
+        {marker: ">", suffix: " quote", block: "blockquote"},
+        {marker: ">>", suffix: " quote", block: "blockquote"},
+        {marker: "1)", suffix: " list", block: "list"},
+        {marker: "1.", suffix: " list", block: "list"},
+        {marker: "+", suffix: " list", block: "list"},
+        {marker: "*", suffix: " list", block: "list"},
+        {marker: "*", suffix: "*bold**", block: "paragraph"},
+        {marker: "`", suffix: "code`", block: "paragraph"},
+        {marker: "~~", suffix: "strike~~", block: "paragraph"},
+        {marker: "[", suffix: "link](https://example.com)", block: "paragraph"}
+      ]
+      for (var spec of cases) {
+        settleLivePreview(before + after, before.length)
+        for (var marker of spec.marker) keyClick(marker)
+        waitForLivePreview()
+        compare(test.editor.text, before + spec.marker + after)
+        verify(test.renderer.documentPlainText.indexOf(spec.marker) >= 0,
+          spec.marker + " remains visible before the next key")
+        compare(test.renderer.cursorTargetForSource(before.length + 1).blockType,
+          "paragraph", spec.marker + " starts as literal text")
+        for (var character of spec.suffix) keyClick(character)
+        waitForLivePreview()
+        compare(test.editor.text, before + spec.marker + spec.suffix + after)
+        compare(test.renderer.cursorTargetForSource(before.length + 1).blockType,
+          spec.block, spec.marker + spec.suffix + " applies the expected structure")
+        if (spec.suffix === "*bold**") {
+          var format = test.renderer.characterFormatForSourceForTests(before.length + 2)
+          verify(format.valid && format.bold, "line-start emphasis reaches the renderer")
+        }
+      }
+    }
+
+    function typeMarkdown(value) {
+      for (var character of value) {
+        if (character === "\n") keyClick(Qt.Key_Return)
+        else keyClick(character)
+      }
+      waitForLivePreview()
+    }
+
+    function checkQuoteRow(position, expectedY, depth) {
+      var caret = test.renderer.cursorRectangleForSource(position)
+      verify(validRectangle(caret), "the quoted source row has a caret")
+      if (expectedY >= 0) compare(caret.y, expectedY)
+      var rails = test.renderer.quoteRailRects.filter(function(rail) {
+        return rail.y <= caret.y && rail.y + rail.height >= caret.y + caret.height
+      })
+      compare(rails.length, depth, "each quote rail covers the editable row " +
+        JSON.stringify({source: test.editor.text, position: position, caret: caret,
+          rails: test.renderer.quoteRailRects}))
+      if (rails.length > 0) verify(rails[rails.length - 1].x < caret.x)
+      return caret.y
+    }
+
+    function observeLiveCaretRows(operation) {
+      var rows = [test.pad.liveCursorRect.y]
+      var record = function() { rows.push(test.pad.liveCursorRect.y) }
+      test.pad.liveCursorRectChanged.connect(record)
+      try {
+        operation()
+        record()
+        waitForLivePreview()
+        wait(35)
+        return rows
+      } finally {
+        test.pad.liveCursorRectChanged.disconnect(record)
+      }
+    }
+
+    function test_zzzzzzzzzzzzz_empty_quote_keeps_caret_and_rail_on_its_row() {
+      var prose = "Above and 4k."
+      for (var after of ["", "\nFollowing"]) {
+        settleLivePreview(prose + "\n" + after, prose.length + 1)
+        var proseY = test.renderer.cursorRectangleForSource(0).y
+        typeMarkdown(">")
+        var rowY = test.renderer.cursorRectangleForSource(prose.length + 2).y
+        verify(rowY > proseY, "the new quote is below the prose")
+        var paintedRows = observeLiveCaretRows(function() { keyClick(Qt.Key_Space) })
+        verify(paintedRows.every(function(y) { return y === rowY }),
+          "Space keeps the painted caret on its original row throughout the quote transition: " +
+            JSON.stringify(paintedRows))
+        compare(test.editor.text, prose + "\n> " + after)
+        checkQuoteRow(test.editor.cursorPosition, rowY, 1)
+        compare(JSON.parse(test.pad.caretState()).liveCursorY, rowY)
+        typeMarkdown("x")
+        checkQuoteRow(test.editor.cursorPosition, rowY, 1)
+        keyClick(Qt.Key_Backspace)
+        waitForLivePreview()
+        checkQuoteRow(test.editor.cursorPosition, rowY, 1)
+        if (after) verify(test.renderer.cursorRectangleForSource(
+          test.editor.text.indexOf("Following")).y > rowY)
+      }
+
+      for (var quote of ["> One\n> \n> Two", "> \n> Two", "> One\n> ", "> \n> ",
+          "> One\n>> \n>> Two", "> > "]) {
+        settleLivePreview(prose + "\n\n" + quote + "\n\nFollowing", prose.length + 2)
+        var previousY = test.renderer.cursorRectangleForSource(0).y
+        var position = prose.length + 2
+        for (var line of quote.split("\n")) {
+          var contentEnd = position + line.replace(/\r$/, "").length
+          var depth = line.match(/>/g).length
+          var y = checkQuoteRow(contentEnd, -1, depth)
+          verify(y > previousY, "each quoted line has a separate editable row")
+          previousY = y
+          position += line.length + 1
+        }
+        verify(test.renderer.cursorRectangleForSource(test.editor.text.indexOf(
+          "Following")).y > previousY, "text after an empty quote stays below it")
+      }
+    }
+
+    function test_zzzzzzzzzzzzzz_markdown_typing_keeps_visible_content_on_its_row() {
+      var before = "Above\n\n"
+      var after = "\n\nBelow"
+      var cases = [
+        {name: "ATX heading", keys: "# Title", html: "<h1>Title</h1>", visible: "Title"},
+        {name: "Setext heading", keys: "Title\n===", html: "<h1>Title</h1>", visible: "Title"},
+        {name: "emphasis", keys: "_italic_", html: "<em>italic</em>", visible: "italic"},
+        {name: "strong", keys: "**bold**", html: "<strong>bold</strong>", visible: "bold"},
+        {name: "strike", keys: "~~strike~~", html: "<del>strike</del>", visible: "strike"},
+        {name: "escape", keys: "\\# hash", html: "<p># hash</p>", visible: "# hash"},
+        {name: "entity", keys: "&amp;", html: "<p>&#x26;</p>", visible: "&"},
+        {name: "inline code", keys: "`code`", html: "jotpin-inline-code", visible: "code"},
+        {name: "link", keys: "[label](https://example.com/long-target)", html: "<a href=", visible: "label"},
+        {name: "autolink", keys: "<https://example.com>", html: "<a href=", visible: "https://example.com"},
+        {name: "dash list", keys: "-entry", source: "- entry", html: "jotpin-list-item", visible: "entry"},
+        {name: "asterisk list", keys: "* entry", html: "jotpin-list-item", visible: "entry"},
+        {name: "plus list", keys: "+ entry", html: "jotpin-list-item", visible: "entry"},
+        {name: "ordered list", keys: "1) entry", html: "jotpin-list-item", visible: "entry"},
+        {name: "divider", keys: "***", html: "<hr>", visible: ""},
+        {name: "alternate divider", keys: "___", html: "<hr>", visible: ""}
+      ]
+      for (var spec of cases) {
+        settleLivePreview(before + after, before.length)
+        typeMarkdown(spec.keys)
+        var source = before + (spec.source || spec.keys) + after
+        compare(test.editor.text, source, spec.name + " preserves its Markdown source")
+        verify(test.renderer.renderedHtml.indexOf(spec.html) >= 0,
+          spec.name + " produces the expected rendered structure " +
+            test.renderer.renderedHtml)
+        verify(test.renderer.documentPlainText.indexOf(spec.visible) >= 0,
+          spec.name + " keeps its content visible")
+        var caret = JSON.parse(test.pad.caretState())
+        var firstY = test.renderer.cursorRectangleForSource(0).y
+        var nextY = test.renderer.cursorRectangleForSource(source.indexOf("Below")).y
+        verify(caret.liveCursorY > firstY && caret.liveCursorY < nextY,
+          spec.name + " keeps the caret between its neighbors")
+        var content = spec.visible ? source.indexOf(spec.visible, before.length) : -1
+        if (content >= 0)
+          compare(caret.liveCursorY, test.renderer.cursorRectangleForSource(
+            content + 1).y, spec.name + " stays on its rendered content row")
+        if (spec.html === "<hr>")
+          compare(caret.liveCursorY, test.renderer.cursorRectangleForSource(
+            before.length).y, "the caret stays on the painted divider")
+        keyClick(Qt.Key_Backspace)
+        waitForLivePreview()
+        compare(test.editor.text, source.slice(0, caret.cursorPosition - 1) +
+          source.slice(caret.cursorPosition), spec.name + " deletes only its last source character")
+      }
+    }
+
+    function test_zzzzzzzzzzzzzzz_empty_task_and_table_boundary_keep_their_rows() {
+      var before = "Above\n\n"
+      var after = "\n\nBelow"
+      settleLivePreview(before + after, before.length)
+      typeMarkdown("-[ ] ")
+      compare(test.editor.text, before + "- [ ] " + after)
+      compare(test.renderer.taskCheckboxRects.length, 1, "an empty task shows its checkbox")
+      var box = test.renderer.taskCheckboxRects[0]
+      var row = test.renderer.cursorRectangleForSource(test.editor.cursorPosition)
+      verify(box.y >= row.y && box.y < row.y + row.height)
+      mouseClick(test.renderer, box.x + box.width / 2, box.y + box.height / 2,
+        Qt.LeftButton)
+      waitForLivePreview()
+      compare(test.editor.text, before + "- [x] " + after)
+      test.pad.selectEditorRange(before.length + 6, before.length + 6)
+      typeMarkdown("x")
+      compare(test.editor.text, before + "- [x] x" + after)
+      compare(test.renderer.cursorRectangleForSource(test.editor.cursorPosition).y, row.y)
+
+      var table = "| Left | Right |\n| --- | --- |\n| one | two |"
+      settleLivePreview(before + table + after, before.length + table.length)
+      var lastCell = test.renderer.cursorRectangleForSource(
+        test.editor.text.indexOf("two"))
+      var boundary = test.renderer.cursorRectangleForSource(test.editor.cursorPosition)
+      compare(boundary.y, lastCell.y, "the last pipe stays on the final table row")
+      var cellEnd = test.editor.text.indexOf("two") + 3
+      test.pad.selectEditorRange(cellEnd, cellEnd)
+      typeMarkdown("x")
+      verify(test.editor.text.indexOf("| one | twox |") >= 0, "caret editing stays in the final cell")
+      compare(test.renderer.cursorRectangleForSource(test.editor.cursorPosition).y,
+        test.renderer.cursorRectangleForSource(test.editor.text.indexOf("twox")).y,
+        "the caret stays in the edited row with the contextual table toolbar open")
+
+      var emptyRow = "|   |   |"
+      var separator = "| --- | --- |"
+      var body = "| one | two |"
+      table = [emptyRow, separator, emptyRow, body, emptyRow].join("\n")
+      settleLivePreview(before + table + after, before.length)
+      var headerPosition = before.length + 2
+      var middlePosition = before.length + emptyRow.length + separator.length + 4
+      var populatedPosition = test.editor.text.indexOf("two")
+      var endingPosition = before.length + table.length - 2
+      var headerY = test.renderer.cursorRectangleForSource(headerPosition).y
+      var middleY = test.renderer.cursorRectangleForSource(middlePosition).y
+      var populatedY = test.renderer.cursorRectangleForSource(populatedPosition).y
+      var endingY = test.renderer.cursorRectangleForSource(endingPosition).y
+      var belowY = test.renderer.cursorRectangleForSource(test.editor.text.indexOf("Below")).y
+      verify(test.renderer.cursorRectangleForSource(0).y < headerY &&
+        headerY < middleY && middleY < populatedY && populatedY < endingY &&
+        endingY < belowY, "empty table rows each have their own editable row")
+      verify(test.renderer.cursorRectangleForSource(middlePosition + 4).x >
+        test.renderer.cursorRectangleForSource(middlePosition).x,
+        "an empty row keeps each cell separately reachable")
+      test.pad.selectEditorRange(middlePosition, middlePosition)
+      typeMarkdown("z")
+      var edited = test.editor.text.indexOf("z")
+      verify(edited >= 0, "an empty table cell accepts typing")
+      compare(test.renderer.cursorRectangleForSource(test.editor.cursorPosition).y,
+        test.renderer.cursorRectangleForSource(edited).y)
+    }
+
+    function test_zzzzzzzzzzzzzzzz_reference_links_and_fences_keep_editable_rows() {
+      var before = "Above\n\n"
+      var after = "\n\nBelow"
+      var definition = "\n\n[ref]: example.md"
+      settleLivePreview(before + definition + after, before.length)
+      typeMarkdown("[label][ref]")
+      var source = before + "[label][ref]" + definition + after
+      compare(test.editor.text, source)
+      verify(test.renderer.renderedHtml.indexOf('href="example.md"') >= 0)
+      var linkEnd = test.renderer.cursorRectangleForSource(test.editor.cursorPosition)
+      compare(linkEnd.y, test.renderer.cursorRectangleForSource(before.length + 2).y)
+      var definitionStart = source.indexOf("[ref]:")
+      var definitionEnd = source.indexOf(after, definitionStart)
+      var definitionCaret = test.renderer.cursorRectangleForSource(definitionEnd)
+      compare(definitionCaret.y, test.renderer.cursorRectangleForSource(definitionStart + 1).y)
+      verify(definitionCaret.y > linkEnd.y && definitionCaret.y <
+        test.renderer.cursorRectangleForSource(source.indexOf("Below")).y)
+
+      settleLivePreview(before + after, before.length)
+      typeMarkdown("```")
+      compare(test.editor.text, before + "```\n\n```" + after)
+      typeMarkdown("js")
+      var header = test.renderer.cursorRectangleForSource(test.editor.cursorPosition)
+      typeMarkdown("\n")
+      var body = test.renderer.cursorRectangleForSource(test.editor.cursorPosition)
+      verify(body.y > header.y, "Return enters the reserved code body")
+      typeMarkdown("var value = 1")
+      compare(test.editor.text, before + "```js\nvar value = 1\n```" + after)
+      compare(test.renderer.codeBlocks[0].language, "js")
+      verify(test.renderer.codeHighlightedPaintCount > 0)
+      compare(test.renderer.cursorRectangleForSource(test.editor.cursorPosition).y, body.y)
+    }
+
+    function test_zzzzzzzzzzzzzzzzz_caret_stays_on_the_intended_row_during_edits() {
+      var cases = [
+        {source: "Above\n\nplain\n\nBelow", position: 12, key: "x", text: "plainx", rowDelta: 0},
+        {source: "Above\n\nplain\n\nBelow", position: 12, key: Qt.Key_Backspace, text: "plai", rowDelta: 0},
+        {source: "Above\n\nplain\n\nBelow", position: 13, key: Qt.Key_Return, text: "plain\n\n\nBelow", rowDelta: 1},
+        {source: "Above\nword\nBelow", position: 6, key: Qt.Key_Backspace, text: "Aboveword", rowDelta: -1},
+        {source: "Above\n\nplain\n\nBelow", position: 7, selectionEnd: 12,
+          key: "x", text: "Above\n\nx\n\nBelow", rowDelta: 0}
+      ]
+      for (var spec of cases) {
+        settleLivePreview(spec.source, spec.position)
+        if (spec.selectionEnd !== undefined)
+          test.pad.selectEditorRange(spec.position, spec.selectionEnd)
+        tryCompare(test.pad, "liveCursorSourcePosition", test.editor.cursorPosition, 2000)
+        var startY = test.pad.liveCursorRect.y
+        var expectedY = startY + spec.rowDelta * test.pad.liveCursorRect.height
+        var rows = observeLiveCaretRows(function() { keyClick(spec.key) })
+        verify(test.editor.text.indexOf(spec.text) >= 0)
+        compare(test.pad.liveCursorRect.y, expectedY)
+        verify(rows.every(function(y) { return y === startY || y === expectedY }),
+          "the caret only visits the starting and destination rows " + JSON.stringify(rows))
+      }
+
+      var wrapped = "This is a wrapped line of text. ".repeat(32)
+      settleLivePreview(wrapped, Math.floor(wrapped.length / 2))
+      tryCompare(test.pad, "liveCursorSourcePosition", test.editor.cursorPosition, 2000)
+      var wrappedY = test.pad.liveCursorRect.y
+      var wrappedHeight = test.pad.liveCursorRect.height
+      keyClick(Qt.Key_Down)
+      tryVerify(function() { return test.pad.liveCursorRect.y > wrappedY }, 2000)
+      compare(test.pad.liveCursorRect.y, wrappedY + wrappedHeight)
+      keyClick(Qt.Key_Up)
+      tryCompare(test.pad, "liveCursorSourcePosition", test.editor.cursorPosition, 2000)
+      compare(test.pad.liveCursorRect.y, wrappedY)
+    }
+
+    function test_zzzzzzzzzzzzzzzzzz_emoji_caret_and_backspace_preserve_text() {
+      var before = "Above\n\na"
+      var after = "b\n\nBelow"
+      for (var glyph of ["🙂", "👩‍💻", "🇺🇸", "🫶🏽"]) {
+        var source = before + glyph + after
+        var glyphEnd = before.length + glyph.length
+        settleLivePreview(source, before.length)
+        tryCompare(test.pad, "liveCursorSourcePosition", before.length, 2000)
+        var originalX = test.pad.liveCursorRect.x
+        keyClick(Qt.Key_Right)
+        compare(test.editor.cursorPosition, glyphEnd)
+        tryCompare(test.pad, "liveCursorSourcePosition", glyphEnd, 2000)
+        verify(test.pad.liveCursorRect.x > originalX, "Right moves visibly past " + glyph)
+        keyClick(Qt.Key_Left)
+        compare(test.editor.cursorPosition, before.length)
+        keyClick(Qt.Key_Right, Qt.ShiftModifier)
+        compare(test.editor.selectedText, glyph)
+
+        test.pad.selectEditorRange(glyphEnd, glyphEnd)
+        tryCompare(test.pad, "liveCursorSourcePosition", test.editor.cursorPosition, 2000)
+        var y = test.pad.liveCursorRect.y
+        var rows = observeLiveCaretRows(function() { keyClick(Qt.Key_Backspace) })
+        compare(test.editor.text, before + after)
+        compare(test.editor.cursorPosition, before.length)
+        verify(rows.every(function(row) { return row === y }),
+          "deleting " + glyph + " keeps the caret on its row")
+        verify(test.pad.undoEditorForTests(), "deleting " + glyph + " is undoable")
+        compare(test.editor.text, source)
+      }
+    }
+
     function cleanupTestCase() {
       var expected = [
         "test_control_press_and_release_routes_to_jotpin",
@@ -570,10 +1191,24 @@ ShellRoot {
         "test_z_backspace_prefix_keeps_row",
         "test_zz_inline_code_typing_color",
         "test_zzz_type_image_and_drag_handles",
-        "test_zzzz_save_keeps_newer_selection"
+        "test_zzzz_save_keeps_newer_selection",
+        "test_zzzzz_file_tabs_wrap_and_scroll",
+        "test_zzzzzz_enter_moves_live_caret_before_parse",
+        "test_zzzzzzz_backspace_to_empty_keeps_preview_row",
+        "test_zzzzzzzz_live_viewport_waits_for_structural_edit",
+        "test_zzzzzzzzz_optimistic_preview_preserves_literal_text",
+        "test_zzzzzzzzzz_dash_below_prose_starts_a_bullet",
+        "test_zzzzzzzzzzz_hashes_stay_visible_until_heading_separator",
+        "test_zzzzzzzzzzzz_other_standalone_markers_remain_editable",
+        "test_zzzzzzzzzzzzz_empty_quote_keeps_caret_and_rail_on_its_row",
+        "test_zzzzzzzzzzzzzz_markdown_typing_keeps_visible_content_on_its_row",
+        "test_zzzzzzzzzzzzzzz_empty_task_and_table_boundary_keep_their_rows",
+        "test_zzzzzzzzzzzzzzzz_reference_links_and_fences_keep_editable_rows",
+        "test_zzzzzzzzzzzzzzzzz_caret_stays_on_the_intended_row_during_edits",
+        "test_zzzzzzzzzzzzzzzzzz_emoji_caret_and_backspace_preserve_text"
       ]
       var success = qtest_results.failCount === 0 &&
-        qtest_results.skipCount === 0 && qtest_results.passCount === 11 &&
+        qtest_results.skipCount === 0 && qtest_results.passCount === expected.length + 1 &&
         JSON.stringify(test.completedTests.slice().sort()) === JSON.stringify(expected)
       console.log((success ? "JOTPIN_LINK_KEYS_RESULT: pass " : "JOTPIN_LINK_KEYS_FAIL: ") +
         JSON.stringify({completed: test.completedTests, failures: qtest_results.failCount,

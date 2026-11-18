@@ -126,6 +126,8 @@ done
 cmp -s "$ROOT_DIR/assets/jotpin-icon.png" \
   "$FREE_INSTALL_DIR/assets/jotpin-icon.png" || \
   fail 'installed plugin icon differs'
+cmp -s "$ROOT_DIR/hypr/jotpin.lua" "$FREE_INSTALL_DIR/hypr/jotpin.lua" || \
+  fail 'the plugin needs its bundled window rules on a standard deployment'
 readonly FREE_WELCOME_NOTE="$FREE_HOME/Documents/Notes/welcome.md"
 cmp -s "$ROOT_DIR/welcome.md" "$FREE_WELCOME_NOTE" || \
   fail 'a first install did not create the welcome note exactly'

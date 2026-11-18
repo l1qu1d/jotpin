@@ -492,6 +492,7 @@ function sourceLines(sourceValue) {
 
 function tableRegions(sourceValue) {
   var source = sourceText(sourceValue)
+  if (source.indexOf("|") < 0) return []
   var lines = sourceLines(source)
   var regions = []
   for (var headerIndex = 0; headerIndex + 1 < lines.length;) {
@@ -1194,6 +1195,7 @@ function tableMaterializeCell(sourceValue, tableStartValue, rowIndexValue,
 
 function fencedBlockOpenBefore(sourceValue, lineStart) {
   var source = sourceText(sourceValue)
+  if (source.indexOf("```") < 0 && source.indexOf("~~~") < 0) return false
   var lines = source.slice(0, lineStart).split("\n")
   var openMarker = ""
   var openLength = 0
@@ -1223,6 +1225,7 @@ function fencedBlockOpenBefore(sourceValue, lineStart) {
 
 function fencedCodeContext(sourceValue, value) {
   var source = sourceText(sourceValue)
+  if (source.indexOf("```") < 0 && source.indexOf("~~~") < 0) return null
   var position = clampPosition(source, value)
   var lineStart = source.lastIndexOf("\n", Math.max(0, position - 1)) + 1
   var scanStart = 0
@@ -1510,7 +1513,9 @@ function completeListMarker(currentValue, previousValue, value) {
   }
 
   var insertedIndex = cursor - 1
-  if (!/[-+*]/.test(current.charAt(insertedIndex))) {
+  // An asterisk can start emphasis and a plus can be ordinary punctuation.
+  // A space typed after either still creates a list through the parser.
+  if (current.charAt(insertedIndex) !== "-") {
     return { changed: false, source: current, cursor: cursor }
   }
 
@@ -1518,15 +1523,33 @@ function completeListMarker(currentValue, previousValue, value) {
   if (fencedBlockOpenBefore(current, lineStart)) {
     return { changed: false, source: current, cursor: cursor }
   }
-  if (!/^[ \t]*$/.test(current.slice(lineStart, insertedIndex)) ||
-      (insertedIndex + 1 < current.length &&
-       /^[ \t]/.test(current.charAt(insertedIndex + 1)))) {
+  var indent = current.slice(lineStart, insertedIndex)
+  if (!/^[ \t]*$/.test(indent)) {
     return { changed: false, source: current, cursor: cursor }
   }
 
-  var nextSource = current.slice(0, insertedIndex + 1) + " " +
-    current.slice(insertedIndex + 1)
-  return { changed: true, source: nextSource, cursor: cursor + 1 }
+  var markerSpace = /^[ \t]/.test(current.charAt(cursor)) ? "" : " "
+  var blankLine = ""
+  if (lineStart > 0 && /^ {0,3}$/.test(indent)) {
+    var line = lineBounds(current, cursor)
+    if (/^[ \t]*$/.test(line.line.slice(cursor - lineStart))) {
+      var above = lineBounds(current, lineStart - 1)
+      var list = listPrefixAt(current, above.lineStart)
+      var blockStart = /^ {0,3}(?:#{1,6}(?:[ \t]|$)|>|`{3,}|~{3,}|(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$)/
+      // A lone dash after prose is a Setext heading underline even with a
+      // trailing space. Separate the new bullet from that paragraph.
+      if (above.line.trim() !== "" && !blockStart.test(above.line) &&
+          (!list || indent.length > list.indent.length))
+        blankLine = above.lineBreak
+    }
+  }
+  if (!blankLine && !markerSpace)
+    return { changed: false, source: current, cursor: cursor }
+
+  var nextSource = current.slice(0, lineStart) + blankLine +
+    current.slice(lineStart, cursor) + markerSpace + current.slice(cursor)
+  return { changed: true, source: nextSource,
+    cursor: cursor + blankLine.length + markerSpace.length }
 }
 
 function continuedListPrefix(list) {
@@ -1893,11 +1916,12 @@ function formattingPrefixBackspace(sourceValue, value, selectionStart, selection
   var source = sourceText(sourceValue)
   var cursor = clampPosition(source, value)
   var unchanged = {handled: false, source: source, cursor: cursor}
-  if (selectionStart !== selectionEnd || fencedCodeContext(source, cursor))
-    return unchanged
+  if (selectionStart !== selectionEnd) return unchanged
   var bounds = lineBounds(source, cursor)
-  var prefix = /^(?:[ \t]*(?:[-+*]|\d+[.)])(?:[ \t]+(?:\[[ xX]\][ \t]*)?|$)| {0,3}#{1,6}(?:[ \t]+|$)|[ \t]*(?:>[ \t]*)+)/.exec(bounds.line)
+  var prefix = /^(?:[ \t]*(?:[-+*]|\d+[.)])(?:[ \t]+(?:\[[ xX]\][ \t]*)?|$)| {0,3}#{1,6}[ \t]+|[ \t]*(?:>[ \t]*)+)/.exec(bounds.line)
   if (!prefix || cursor !== bounds.lineStart + prefix[0].length) return unchanged
+  if (/^ {0,3}(?:>+|[+*]|\d{1,9}[.)])$/.test(bounds.line)) return unchanged
+  if (fencedCodeContext(source, cursor)) return unchanged
   return {handled: true,
     source: source.slice(0, bounds.lineStart) + source.slice(cursor),
     cursor: bounds.lineStart}
@@ -1940,6 +1964,13 @@ function listBackspace(sourceValue, value, selectionStart, selectionEnd,
   }
 }
 
+function splitsSurrogatePair(source, position) {
+  var lead = source.charCodeAt(position - 1)
+  var trail = source.charCodeAt(position)
+  return lead >= 0xd800 && lead <= 0xdbff &&
+    trail >= 0xdc00 && trail <= 0xdfff
+}
+
 function plainBackspace(sourceValue, value, selectionStart, selectionEnd) {
   var source = sourceText(sourceValue)
   var cursor = clampPosition(source, value)
@@ -1960,6 +1991,8 @@ function plainBackspace(sourceValue, value, selectionStart, selectionEnd) {
   }
 
   if (start !== end) {
+    if (splitsSurrogatePair(source, start)) start--
+    if (splitsSurrogatePair(source, end)) end++
     return {
       handled: true,
       source: source.slice(0, start) + source.slice(end),
@@ -1971,10 +2004,13 @@ function plainBackspace(sourceValue, value, selectionStart, selectionEnd) {
     return { handled: false, source: source, cursor: 0 }
   }
 
+  if (splitsSurrogatePair(source, start)) end++
+  start--
+  if (splitsSurrogatePair(source, start)) start--
   return {
     handled: true,
-    source: source.slice(0, start - 1) + source.slice(start),
-    cursor: start - 1
+    source: source.slice(0, start) + source.slice(end),
+    cursor: start
   }
 }
 
@@ -2316,6 +2352,34 @@ function transactionKind(removed, inserted, beforeState, afterState) {
   return "replace"
 }
 
+function sourceEditBounds(before, after) {
+  var chunkLength = 256
+  var sharedLength = Math.min(before.length, after.length)
+  var start = 0
+  // Compare long unchanged spans in native string operations. Only the
+  // chunks containing the edit boundaries need per-character comparison.
+  while (start + chunkLength <= sharedLength &&
+      before.slice(start, start + chunkLength) ===
+        after.slice(start, start + chunkLength)) start += chunkLength
+  while (start < sharedLength && before.charAt(start) === after.charAt(start))
+    start++
+
+  var oldEnd = before.length
+  var newEnd = after.length
+  while (oldEnd - chunkLength >= start && newEnd - chunkLength >= start &&
+      before.slice(oldEnd - chunkLength, oldEnd) ===
+        after.slice(newEnd - chunkLength, newEnd)) {
+    oldEnd -= chunkLength
+    newEnd -= chunkLength
+  }
+  while (oldEnd > start && newEnd > start &&
+      before.charAt(oldEnd - 1) === after.charAt(newEnd - 1)) {
+    oldEnd--
+    newEnd--
+  }
+  return {start: start, oldEnd: oldEnd, newEnd: newEnd}
+}
+
 function makeEditTransaction(beforeSourceValue, afterSourceValue,
                              beforeCursorOrState, afterCursorOrState,
                              beforeSelectionStartValue,
@@ -2347,32 +2411,15 @@ function makeEditTransaction(beforeSourceValue, afterSourceValue,
     timestamp = timestampValue
   }
 
-  var prefixLength = 0
-  var commonLength = Math.min(beforeSource.length, afterSource.length)
-  while (prefixLength < commonLength &&
-         beforeSource.charAt(prefixLength) ===
-           afterSource.charAt(prefixLength)) {
-    prefixLength++
-  }
-
-  var suffixLength = 0
-  while (suffixLength < beforeSource.length - prefixLength &&
-         suffixLength < afterSource.length - prefixLength &&
-         beforeSource.charAt(beforeSource.length - 1 - suffixLength) ===
-           afterSource.charAt(afterSource.length - 1 - suffixLength)) {
-    suffixLength++
-  }
-
-  var removed = beforeSource.slice(prefixLength,
-    beforeSource.length - suffixLength)
-  var inserted = afterSource.slice(prefixLength,
-    afterSource.length - suffixLength)
+  var edit = sourceEditBounds(beforeSource, afterSource)
+  var removed = beforeSource.slice(edit.start, edit.oldEnd)
+  var inserted = afterSource.slice(edit.start, edit.newEnd)
   var kind = transactionKind(removed, inserted, beforeState, afterState)
   var ordinarySingleCharacter = (kind === "insert" || kind === "backspace" ||
     kind === "delete") && removed.length + inserted.length === 1
 
   var transaction = {
-    start: prefixLength,
+    start: edit.start,
     removed: removed,
     inserted: inserted,
     beforeCursor: beforeState.cursor,
@@ -2736,8 +2783,10 @@ if (typeof module !== "undefined" && module.exports) {
     listBackspace: listBackspace,
     formattingPrefixBackspace: formattingPrefixBackspace,
     plainBackspace: plainBackspace,
+    splitsSurrogatePair: splitsSurrogatePair,
     backspaceAutoCodePair: backspaceAutoCodePair,
     backspaceAutoCodeFence: backspaceAutoCodeFence,
+    sourceEditBounds: sourceEditBounds,
     makeEditTransaction: makeEditTransaction,
     applyEditTransaction: applyEditTransaction,
     coalesceEditTransactions: coalesceEditTransactions,

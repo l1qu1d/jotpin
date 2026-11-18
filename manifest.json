@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "dev.jotpin",
   "name": "JotPin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "JotPin contributors",
   "description": "A quick Markdown scratchpad for the Omarchy shell.",
   "kinds": ["panel"],
