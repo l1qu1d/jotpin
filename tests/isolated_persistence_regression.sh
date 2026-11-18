@@ -6,6 +6,7 @@ readonly TEST_TMP_DIR="$(mktemp -d /tmp/jotpin-persistence.XXXXXX)"
 readonly CONFIG_DIR="$TEST_TMP_DIR/config"
 readonly RUNTIME_DIR="$TEST_TMP_DIR/runtime"
 readonly TEST_HOME="$TEST_TMP_DIR/home"
+readonly TEST_RECOVERY_DIR="$TEST_HOME/.local/state/jotpin/recovery"
 readonly TEST_NOTE_PATH="$TEST_TMP_DIR/note.md"
 readonly TEST_OPEN_NOTE="$TEST_TMP_DIR/open-target.md"
 readonly TEST_POLICY_NOTE_PATH="$TEST_TMP_DIR/policy-note.md"
@@ -242,11 +243,16 @@ fi
 run_queued_recovery() {
   local original_note queued_recovery_path
   original_note="$(<"$TEST_NOTE_PATH")"
-  run_stage recovery-queued
+  if [[ -d "$TEST_RECOVERY_DIR" ]]; then
+    rmdir -- "$TEST_RECOVERY_DIR"
+  fi
+  (umask 000; run_stage recovery-queued)
   queued_recovery_path="$(sed -n 's/.*PERSIST_RECOVERY_PATH: //p' \
     "$TEST_TMP_DIR/recovery-queued.log" | tail -n 1)"
-  [[ "$queued_recovery_path" == "$TEST_HOME/"* ]] || \
-    fail "queued recovery snapshot escaped the isolated home"
+  [[ "$queued_recovery_path" == "$TEST_RECOVERY_DIR/"* ]] || \
+    fail "queued recovery snapshot escaped the isolated recovery directory"
+  [[ "$(stat -c '%a' -- "$TEST_RECOVERY_DIR")" == 700 ]] || \
+    fail "new recovery directory is not private under a permissive umask"
   [[ "$(jq -r '.source' "$queued_recovery_path")" == "recovery-final" ]] || \
     fail "queued recovery did not persist the latest source"
   [[ "$(<"$TEST_NOTE_PATH")" == "$original_note" ]] || \
@@ -526,12 +532,15 @@ expected_recovery="$(jq -r '.source' "$recovery_path")"
   fail "recovery file did not contain the continuously edited source"
 printf '%s\n' 'PASS: continuous edits left the saved note unchanged and created recovery bytes'
 
+chmod 755 -- "$TEST_RECOVERY_DIR"
 run_stage recover
+[[ "$(stat -c '%a' -- "$TEST_RECOVERY_DIR")" == 700 ]] || \
+  fail "startup did not restrict the existing recovery directory"
 [[ "$(<"$TEST_NOTE_PATH")" == "$expected_recovery" ]] || \
   fail "Recover did not persist the recovery source"
 [[ ! -f "$recovery_path" ]] || \
   fail "Recover did not remove the recovery file"
-printf '%s\n' 'PASS: Recover persisted the snapshot and removed its recovery file'
+printf '%s\n' 'PASS: startup secured the existing directory and Recover persisted its snapshot'
 
 saved_before_discard="$(<"$TEST_NOTE_PATH")"
 run_stage discard-prepare
