@@ -5253,6 +5253,7 @@ Item {
 
   function loadRecoverySnapshot(rawValue) {
     var loadedPath = String(recoveryFile.path || "")
+    if (loadedPath === "") return
     root.recoveryLoadedPath = loadedPath
     root.recoveryHasSnapshot = false
     root.recoverySnapshotNotePath = ""
@@ -5277,8 +5278,13 @@ Item {
   }
 
   function ensureRecoveryDirectory() {
-    if (root.recoveryDirectoryReady || recoveryDirectoryProcess.running) return
-    recoveryDirectoryProcess.command = ["mkdir", "-p", root.recoveryDirectory]
+    if (root.home === "" || root.recoveryDirectoryReady ||
+        recoveryDirectoryProcess.running) return
+    // Tighten directories from older installs before FileView can open drafts.
+    recoveryDirectoryProcess.command = ["sh", "-c",
+      'umask 077; [ ! -L "$1" ] && mkdir -p -- "$1" && ' +
+      '[ -O "$1" ] && chmod 700 -- "$1"',
+      "jotpin-recovery", root.recoveryDirectory]
     recoveryDirectoryProcess.running = true
   }
 
@@ -5354,7 +5360,7 @@ Item {
   }
 
   function startRecoveryDelete() {
-    if (recoveryCleanupProcess.running ||
+    if (!root.recoveryDirectoryReady || recoveryCleanupProcess.running ||
         root.recoveryDeleteQueue.length === 0) return
     root.recoveryDeletePath = root.recoveryDeleteQueue[0]
     recoveryCleanupProcess.command = ["rm", "-f", "--",
@@ -5813,7 +5819,7 @@ Item {
 
   FileView {
     id: recoveryFile
-    path: root.recoveryPath
+    path: root.recoveryDirectoryReady ? root.recoveryPath : ""
     atomicWrites: true
     printErrors: false
 
@@ -5921,9 +5927,9 @@ Item {
 
     onExited: function(exitCode) {
       root.recoveryDirectoryReady = exitCode === 0
-      if (root.recoveryDirectoryReady && root.recoveryWritePending) {
-        root.writeRecoverySnapshot()
-      }
+      if (!root.recoveryDirectoryReady) return
+      root.startRecoveryDelete()
+      if (root.recoveryWritePending) Qt.callLater(root.writeRecoverySnapshot)
     }
   }
 
@@ -6468,6 +6474,7 @@ Item {
     root.syncLiveCursor()
   }
   Component.onCompleted: {
+    root.ensureRecoveryDirectory()
     root.ensurePresentationSettingsDirectory()
   }
 
