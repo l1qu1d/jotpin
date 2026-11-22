@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-22
+
 - Keep Side and Window presentations floating with bundled Hyprland rules.
 - Wrap file tabs and improve horizontal wheel scrolling and scrollbar dragging.
 - Keep the Live Preview caret on the intended row during typing, Enter,
@@ -10,6 +12,8 @@
   rows, and make empty checklist items clickable.
 - Reduce editing latency and preserve complete emoji during Backspace.
 - Refresh bundled Markdown dependencies and add editor and packaging regressions.
+- Initialize private recovery storage at startup so recovery snapshots can be
+  saved on fresh installations and after upgrades.
 
 ## [1.0.0] - 2026-09-05
 
