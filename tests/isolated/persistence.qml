@@ -45,6 +45,8 @@ ShellRoot {
   property int phase: 0
   property double phaseStartedAt: 0
   property string diskText: ""
+  property string secondTabBeforeSave: ""
+  property int secondTabReadGeneration: -1
   property string promptSource: ""
   property string noteBeforeDiscard: ""
   property int editCount: 0
@@ -104,6 +106,8 @@ ShellRoot {
     if (test.mode === "save-as-overwrite") return test.saveAsOverwritePath
     if (test.mode === "save-as-race") return test.saveAsRacePath
     if (test.mode === "rename-race") return test.renameRaceTargetPath
+    if (test.mode === "tab-state-prepare" && test.phase === 202)
+      return test.tabStateSecondPath
     return test.notePath
   }
 
@@ -2998,6 +3002,13 @@ ShellRoot {
         if (pad.loadingFromFile || pad.notePath !== test.tabStateSecondPath ||
             pad.noteLoadedPath !== test.tabStateSecondPath ||
             !pad.startupContentRevealed || !pad.editorCommandAllowed()) return
+        test.secondTabBeforeSave = pad.knownDiskSource
+        test.secondTabReadGeneration = Number(pad.noteSaveGeneration || 0)
+        if (pad.knownDiskPath !== test.tabStateSecondPath ||
+            test.secondTabBeforeSave !== "base\n") {
+          test.fail("stale read test did not start with the expected on-disk note")
+          return
+        }
         var secondSource = test.tabStateSource("B")
         if (!pad.replaceEditorText(secondSource, secondSource.length)) {
           test.fail("second tab did not create an independent undoable edit")
@@ -3014,7 +3025,23 @@ ShellRoot {
       }
 
       if (test.phase === 202 && test.mode === "tab-state-prepare") {
-        if (pad.dirty || pad.noteSaveInFlight || pad.loadingFromFile) return
+        if (pad.dirty || pad.pendingSave || pad.noteSaveInFlight ||
+            pad.loadingFromFile || pad.externalReloadPending ||
+            test.diskText !== test.tabStateSource("B")) return
+        // Deliver the earlier read only after a real save and independent
+        // disk read. A stale result must not replace the editor or its undo.
+        pad.externalReloadPending = true
+        pad.externalReloadPath = test.tabStateSecondPath
+        if (pad.externalReloadSaveGeneration !== undefined)
+          pad.externalReloadSaveGeneration = test.secondTabReadGeneration
+        if (!pad.handleExternalReload(test.tabStateSecondPath,
+              test.secondTabBeforeSave) ||
+            String(pad.markdownSource || "") !== test.tabStateSource("B") ||
+            !pad.editorCanUndo || pad.externalConflict) {
+          test.fail("delayed pre-save read replaced saved tab source or undo")
+          return
+        }
+        test.pass("a delayed pre-save read cannot replace saved tab source or undo")
         pad.selectEditorRange(500, 512)
         var secondScroll = pad.setEditorScrollForTests(180)
         if (!test.closeEnough(secondScroll, 180)) {
