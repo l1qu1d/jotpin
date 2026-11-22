@@ -92,6 +92,8 @@ Item {
   property string noteLoadError: ""
   property string knownDiskPath: ""
   property string knownDiskSource: ""
+  property int noteSaveGeneration: 0
+  property int externalReloadSaveGeneration: 0
   property bool externalReloadPending: false
   property string externalReloadPath: ""
   property bool externalConflict: false
@@ -5401,6 +5403,7 @@ Item {
     root.pendingNoteSaveSource = ""
     root.noteSaveInFlight = false
     if (savedPath === "") return
+    root.noteSaveGeneration++
     root.knownDiskPath = savedPath
     root.knownDiskSource = savedSource
 
@@ -5531,7 +5534,19 @@ Item {
         root.loadingFromFile || root.noteLoadError !== "") return
     root.externalReloadPending = true
     root.externalReloadPath = root.notePath
+    root.externalReloadSaveGeneration = root.noteSaveGeneration
     noteFile.reload()
+  }
+
+  function rereadExternalAfterSave(path) {
+    if (root.externalReloadSaveGeneration === root.noteSaveGeneration)
+      return false
+    // A local save completed after this read started. Neither its bytes nor
+    // its failure prove that the current on-disk file changed. Read again.
+    Qt.callLater(function() {
+      if (root.notePath === path) root.observeExternalFileChange()
+    })
+    return true
   }
 
   function handleExternalReload(loadedPath, loadedSource) {
@@ -5539,6 +5554,7 @@ Item {
         loadedPath !== root.externalReloadPath) return false
     root.externalReloadPending = false
     root.externalReloadPath = ""
+    if (root.rereadExternalAfterSave(loadedPath)) return true
 
     var expectedInFlight = root.noteSaveInFlight &&
       loadedPath === root.pendingNoteSavePath &&
@@ -5662,6 +5678,7 @@ Item {
         var changedPath = root.externalReloadPath
         root.externalReloadPending = false
         root.externalReloadPath = ""
+        if (root.rereadExternalAfterSave(changedPath)) return
         if (changedPath === root.notePath) {
           saveTimer.stop()
           root.forgetRecentFile(changedPath)

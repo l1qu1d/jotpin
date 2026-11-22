@@ -14,6 +14,8 @@
 - Refresh bundled Markdown dependencies and add editor and packaging regressions.
 - Initialize private recovery storage at startup so recovery snapshots can be
   saved on fresh installations and after upgrades.
+- Preserve saved tab contents and undo history when an older file read finishes
+  after a save.
 
 ## [1.0.0] - 2026-09-05
 
